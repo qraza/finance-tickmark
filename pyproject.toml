@@ -1,7 +1,7 @@
 [project]
 name = "finance-tickmark"
 version = "0.1.0"
-description = "Governed finance Q&A: text-to-semantic-query over dbt MetricFlow, cited RAG, and an eval gate in CI."
+description = "RAG + text-to-SQL for FP&A: LLM answers grounded in a dbt semantic layer, with cited sources and a CI eval gate."
 requires-python = ">=3.11"
 dependencies = [
   "dbt-core>=1.10",

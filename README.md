@@ -1,8 +1,10 @@
 # finance-tickmark
 
+**A RAG and text-to-SQL system for FP&A questions.** The LLM's queries go through a dbt semantic layer (MetricFlow), so it picks governed metrics instead of writing raw SQL against tables. Every answer comes with **the number, the SQL that produced it, and a cited source for the explanation**, and every change is gated by evals in CI.
+
 *An auditor's tickmark says a figure was checked against its source. This puts one on every answer.*
 
-Ask a finance question in plain English, get a governed answer: **a number from the semantic layer, the SQL that produced it, and a cited source for the explanation**, with every change gated by evals in CI.
+`RAG` · `text-to-SQL` · `semantic layer` · `dbt` · `MetricFlow` · `DuckDB` · `LLM evals` · `FP&A`
 
 > **The LLM never invents a metric.** It can only select metrics and dimensions from a dbt semantic layer, and every answer is scored against a golden set.
 
@@ -46,7 +48,7 @@ flowchart LR
 | Data | Synthetic GL for a fictional SaaS company (2 entities, 5 cost centres, GBP/USD), FY2026 budget, actuals Jan–Sep | `data_gen/`, `dbt/seeds/` |
 | Model | Staging → `fct_pnl` in GBP at actual, budget and constant-currency rates | `dbt/models/` |
 | Semantic layer | 22 governed metrics with owners and definitions; variances compare closed months only | `dbt/models/marts/metrics.yml` |
-| Text-to-semantic-query | Tool schema generated from the catalogue, metric names as enums; structured filters rendered server-side | `app/llm.py`, `app/semantic/` |
+| Text-to-SQL (via semantic layer) | Tool schema generated from the catalogue, metric names as enums; structured filters rendered server-side | `app/llm.py`, `app/semantic/` |
 | RAG | Heading-aware chunking, BM25 baseline, citations per chunk | `app/rag/` |
 | Evals | Generic runner + finance scorers; CI fails below threshold | `evals/` |
 
@@ -106,7 +108,7 @@ cd dbt && DBT_PROFILES_DIR=. mf query --metrics opex,opex_budget_to_date,opex_va
 
 ## Design decisions
 
-- **Text-to-semantic-query, not text-to-SQL.** The model emits a structured query; MetricFlow writes the SQL. That removes join and aggregation mistakes entirely, and the SQL is still shown for audit.
+- **Text-to-SQL through a semantic layer, not against raw tables.** The model emits a structured query (metrics, dimensions, filters); MetricFlow writes the SQL. That removes join and aggregation mistakes entirely, and the SQL is still shown for audit.
 - **Enums in the tool schema.** Metric and dimension names are JSON-schema enums generated from the manifest, so the model can't name a metric that doesn't exist. Validation still runs server-side.
 - **Variances only over closed months.** `*_budget_to_date` uses budget for months with actuals, so a September YTD variance never compares against October–December budget.
 - **Fictional company end to end.** Real filings can't explain a synthetic ledger's variances, so the corpus is generated with the data.
