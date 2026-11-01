@@ -3,5 +3,5 @@ finance_tickmark:
   outputs:
     dev:
       type: duckdb
-      path: "{{ env_var('FINANCE_DB_PATH', '../finance.duckdb') }}"
+      path: "{{ env_var('FINANCE_TICKMARK_DB_PATH', '../finance-tickmark.duckdb') }}"
       threads: 4

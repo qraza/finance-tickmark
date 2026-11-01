@@ -1,6 +1,6 @@
-# Tickmark
+# finance-tickmark
 
-*`finance-tickmark`: an auditor's tickmark says a figure was checked against its source. This puts one on every answer.*
+*An auditor's tickmark says a figure was checked against its source. This puts one on every answer.*
 
 Ask a finance question in plain English, get a governed answer: **a number from the semantic layer, the SQL that produced it, and a cited source for the explanation**, with every change gated by evals in CI.
 

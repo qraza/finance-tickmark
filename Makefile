@@ -1,5 +1,5 @@
 export DBT_PROFILES_DIR := $(CURDIR)/dbt
-export FINANCE_DB_PATH := $(CURDIR)/finance.duckdb
+export FINANCE_TICKMARK_DB_PATH := $(CURDIR)/finance-tickmark.duckdb
 
 .PHONY: setup data build test evals evals-pipeline all clean
 
@@ -25,4 +25,4 @@ evals-pipeline:  ## full system with the LLM (needs ANTHROPIC_API_KEY)
 all: build test evals
 
 clean:
-	rm -rf finance.duckdb dbt/target dbt/logs evals/results
+	rm -rf finance-tickmark.duckdb dbt/target dbt/logs evals/results

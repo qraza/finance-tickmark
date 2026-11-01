@@ -15,7 +15,7 @@ import os
 from .semantic.catalogue import TIME_GRAINS, Catalogue
 from .semantic.query import SemanticQuery
 
-MODEL = os.environ.get("TICKMARK_MODEL", "claude-sonnet-5-5")
+MODEL = os.environ.get("FINANCE_TICKMARK_MODEL", "claude-sonnet-5-5")
 
 SYSTEM = """You translate finance questions about Larkspur Ltd into queries against a governed semantic layer.
 Rules:

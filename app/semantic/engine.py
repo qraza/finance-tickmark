@@ -29,7 +29,7 @@ class QueryResult:
 class SemanticEngine:
     def __init__(self, dbt_dir: Path = DBT_DIR):
         self.dbt_dir = dbt_dir
-        os.environ.setdefault("FINANCE_DB_PATH", str(REPO / "finance.duckdb"))
+        os.environ.setdefault("FINANCE_TICKMARK_DB_PATH", str(REPO / "finance-tickmark.duckdb"))
         self.catalogue = Catalogue.load(dbt_dir / "target" / "semantic_manifest.json")
 
     @cached_property

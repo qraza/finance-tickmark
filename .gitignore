@@ -2,7 +2,7 @@ __pycache__/
 *.egg-info/
 .venv/
 .env
-finance.duckdb*
+finance-tickmark.duckdb*
 dbt/target/
 dbt/logs/
 dbt/dbt_packages/
