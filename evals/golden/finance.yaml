@@ -1,4 +1,4 @@
-# Golden set for the finance copilot.
+# Golden set for Tickmark.
 #
 # expected.numbers  values computed independently from data_gen (pure Python over the CSVs),
 #                   NOT from dbt or MetricFlow output, so the semantic layer is actually tested.

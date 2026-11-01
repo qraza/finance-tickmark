@@ -1,14 +1,14 @@
-name: finance_copilot
+name: finance_tickmark
 version: "0.1.0"
 config-version: 2
-profile: finance_copilot
+profile: finance_tickmark
 
 model-paths: ["models"]
 seed-paths: ["seeds"]
 target-path: "target"
 
 seeds:
-  finance_copilot:
+  finance_tickmark:
     +schema: raw
     raw_cost_centres:
       +column_types: {cost_centre_code: varchar}
@@ -22,7 +22,7 @@ seeds:
       +column_types: {period: date}
 
 models:
-  finance_copilot:
+  finance_tickmark:
     staging:
       +materialized: view
     marts:

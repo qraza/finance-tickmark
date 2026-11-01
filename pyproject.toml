@@ -1,5 +1,5 @@
 [project]
-name = "finance-copilot"
+name = "finance-tickmark"
 version = "0.1.0"
 description = "Governed finance Q&A: text-to-semantic-query over dbt MetricFlow, cited RAG, and an eval gate in CI."
 requires-python = ">=3.11"
