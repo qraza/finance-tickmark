@@ -1,0 +1,280 @@
+# The governed metric catalogue. This is the ONLY place a number can come from:
+# the LLM selects metrics and dimensions from here; it never writes SQL against tables.
+# Each metric has an owner and a definition (config.meta) that the RAG index also ingests.
+metrics:
+- name: revenue
+  label: Revenue
+  type: simple
+  description: Subscription and professional services revenue (accounts 4xxx). Actuals in GBP at the monthly actual FX rate.
+  type_params:
+    measure: actual_gbp
+  filter: '{{ Dimension(''account__account_type'') }} = ''revenue'''
+  config:
+    meta:
+      owner: Priya Nair (Commercial)
+      definition: Sum of actual revenue in GBP.
+- name: revenue_budget
+  label: Revenue budget
+  type: simple
+  description: Revenue budget in GBP at the budget FX rate, including months not yet closed.
+  type_params:
+    measure: budget_gbp
+  filter: '{{ Dimension(''account__account_type'') }} = ''revenue'''
+  config:
+    meta:
+      owner: Priya Nair (Commercial)
+      definition: Full-year phased budget for revenue.
+- name: revenue_budget_to_date
+  label: Revenue budget (closed months)
+  type: simple
+  description: Revenue budget for closed months only. The comparator for revenue_variance.
+  type_params:
+    measure: budget_gbp_closed
+  filter: '{{ Dimension(''account__account_type'') }} = ''revenue'''
+  config:
+    meta:
+      owner: Priya Nair (Commercial)
+      definition: Budget restricted to months with actuals, so variances compare like for like.
+- name: revenue_variance
+  label: Revenue variance
+  type: derived
+  description: Actual minus budget for closed months. Positive is favourable.
+  type_params:
+    expr: revenue - revenue_budget_to_date
+    metrics:
+    - name: revenue
+    - name: revenue_budget_to_date
+  config:
+    meta:
+      owner: Priya Nair (Commercial)
+      definition: Actual minus budget, closed months only. FP&A policy sign convention.
+- name: revenue_variance_pct
+  label: Revenue variance %
+  type: derived
+  description: Revenue variance as a fraction of budget for closed months.
+  type_params:
+    expr: (revenue - revenue_budget_to_date) / nullif(revenue_budget_to_date, 0)
+    metrics:
+    - name: revenue
+    - name: revenue_budget_to_date
+  config:
+    meta:
+      owner: Priya Nair (Commercial)
+      definition: Variance divided by budget, closed months only.
+- name: cogs
+  label: Cost of sales
+  type: simple
+  description: 'Cost of sales: cloud hosting and support staff (accounts 5xxx). Actuals in GBP at the monthly actual FX rate.'
+  type_params:
+    measure: actual_gbp
+  filter: '{{ Dimension(''account__account_type'') }} = ''cogs'''
+  config:
+    meta:
+      owner: Group FP&A
+      definition: Sum of actual cost of sales in GBP.
+- name: cogs_budget
+  label: Cost of sales budget
+  type: simple
+  description: Cost of sales budget in GBP at the budget FX rate, including months not yet closed.
+  type_params:
+    measure: budget_gbp
+  filter: '{{ Dimension(''account__account_type'') }} = ''cogs'''
+  config:
+    meta:
+      owner: Group FP&A
+      definition: Full-year phased budget for cost of sales.
+- name: cogs_budget_to_date
+  label: Cost of sales budget (closed months)
+  type: simple
+  description: Cost of sales budget for closed months only. The comparator for cogs_variance.
+  type_params:
+    measure: budget_gbp_closed
+  filter: '{{ Dimension(''account__account_type'') }} = ''cogs'''
+  config:
+    meta:
+      owner: Group FP&A
+      definition: Budget restricted to months with actuals, so variances compare like for like.
+- name: cogs_variance
+  label: Cost of sales variance
+  type: derived
+  description: Actual minus budget for closed months. Positive is adverse (overspend).
+  type_params:
+    expr: cogs - cogs_budget_to_date
+    metrics:
+    - name: cogs
+    - name: cogs_budget_to_date
+  config:
+    meta:
+      owner: Group FP&A
+      definition: Actual minus budget, closed months only. FP&A policy sign convention.
+- name: cogs_variance_pct
+  label: Cost of sales variance %
+  type: derived
+  description: Cost of sales variance as a fraction of budget for closed months.
+  type_params:
+    expr: (cogs - cogs_budget_to_date) / nullif(cogs_budget_to_date, 0)
+    metrics:
+    - name: cogs
+    - name: cogs_budget_to_date
+  config:
+    meta:
+      owner: Group FP&A
+      definition: Variance divided by budget, closed months only.
+- name: opex
+  label: Operating expenses
+  type: simple
+  description: 'Operating expenses: salaries, contractors, software, travel, marketing, rent (accounts 6xxx). Actuals in GBP
+    at the monthly actual FX rate.'
+  type_params:
+    measure: actual_gbp
+  filter: '{{ Dimension(''account__account_type'') }} = ''opex'''
+  config:
+    meta:
+      owner: Group FP&A
+      definition: Sum of actual operating expenses in GBP.
+- name: opex_budget
+  label: Operating expenses budget
+  type: simple
+  description: Operating expenses budget in GBP at the budget FX rate, including months not yet closed.
+  type_params:
+    measure: budget_gbp
+  filter: '{{ Dimension(''account__account_type'') }} = ''opex'''
+  config:
+    meta:
+      owner: Group FP&A
+      definition: Full-year phased budget for operating expenses.
+- name: opex_budget_to_date
+  label: Operating expenses budget (closed months)
+  type: simple
+  description: Operating expenses budget for closed months only. The comparator for opex_variance.
+  type_params:
+    measure: budget_gbp_closed
+  filter: '{{ Dimension(''account__account_type'') }} = ''opex'''
+  config:
+    meta:
+      owner: Group FP&A
+      definition: Budget restricted to months with actuals, so variances compare like for like.
+- name: opex_variance
+  label: Operating expenses variance
+  type: derived
+  description: Actual minus budget for closed months. Positive is adverse (overspend).
+  type_params:
+    expr: opex - opex_budget_to_date
+    metrics:
+    - name: opex
+    - name: opex_budget_to_date
+  config:
+    meta:
+      owner: Group FP&A
+      definition: Actual minus budget, closed months only. FP&A policy sign convention.
+- name: opex_variance_pct
+  label: Operating expenses variance %
+  type: derived
+  description: Operating expenses variance as a fraction of budget for closed months.
+  type_params:
+    expr: (opex - opex_budget_to_date) / nullif(opex_budget_to_date, 0)
+    metrics:
+    - name: opex
+    - name: opex_budget_to_date
+  config:
+    meta:
+      owner: Group FP&A
+      definition: Variance divided by budget, closed months only.
+- name: revenue_constant_currency
+  label: Revenue (constant currency)
+  type: simple
+  description: Revenue actuals restated at the budget FX rate. Strips out FX translation so trading can be compared to budget.
+  type_params:
+    measure: actual_gbp_cc
+  filter: '{{ Dimension(''account__account_type'') }} = ''revenue'''
+  config:
+    meta:
+      owner: Group FP&A
+      definition: Actual revenue in local currency translated at the budget rate (0.79 GBP per USD).
+- name: fx_impact_on_revenue
+  label: FX impact on revenue
+  type: derived
+  description: Reported revenue minus constant-currency revenue. Negative means currency reduced reported revenue.
+  type_params:
+    expr: revenue - revenue_constant_currency
+    metrics:
+    - name: revenue
+    - name: revenue_constant_currency
+  config:
+    meta:
+      owner: Group FP&A
+      definition: Translation difference between actual and budget FX rates on revenue.
+- name: gross_profit
+  label: Gross profit
+  type: derived
+  description: Revenue minus cost of sales.
+  type_params:
+    expr: revenue - cogs
+    metrics:
+    - name: revenue
+    - name: cogs
+  config:
+    meta:
+      owner: Group FP&A
+      definition: Revenue minus cost of sales.
+- name: ebitda
+  label: EBITDA
+  type: derived
+  description: Revenue minus cost of sales minus operating expenses. Larkspur has no D&A in this model, so EBITDA equals operating
+    profit.
+  type_params:
+    expr: revenue - cogs - opex
+    metrics:
+    - name: revenue
+    - name: cogs
+    - name: opex
+  config:
+    meta:
+      owner: Group FP&A
+      definition: Revenue minus cost of sales minus operating expenses. Larkspur has no D&A in this model, so EBITDA equals
+        operating profit.
+- name: ebitda_budget_to_date
+  label: EBITDA budget (closed months)
+  type: derived
+  description: Budgeted EBITDA for closed months.
+  type_params:
+    expr: revenue_budget_to_date - cogs_budget_to_date - opex_budget_to_date
+    metrics:
+    - name: revenue_budget_to_date
+    - name: cogs_budget_to_date
+    - name: opex_budget_to_date
+  config:
+    meta:
+      owner: Group FP&A
+      definition: Budgeted EBITDA for closed months.
+- name: ebitda_variance
+  label: EBITDA variance
+  type: derived
+  description: Actual minus budget EBITDA, closed months. Positive is favourable.
+  type_params:
+    expr: (revenue - cogs - opex) - (revenue_budget_to_date - cogs_budget_to_date - opex_budget_to_date)
+    metrics:
+    - name: revenue
+    - name: cogs
+    - name: opex
+    - name: revenue_budget_to_date
+    - name: cogs_budget_to_date
+    - name: opex_budget_to_date
+  config:
+    meta:
+      owner: Group FP&A
+      definition: Actual minus budget EBITDA, closed months. Positive is favourable.
+- name: ebitda_margin
+  label: EBITDA margin
+  type: derived
+  description: EBITDA as a fraction of revenue.
+  type_params:
+    expr: (revenue - cogs - opex) / nullif(revenue, 0)
+    metrics:
+    - name: revenue
+    - name: cogs
+    - name: opex
+  config:
+    meta:
+      owner: Group FP&A
+      definition: EBITDA as a fraction of revenue.

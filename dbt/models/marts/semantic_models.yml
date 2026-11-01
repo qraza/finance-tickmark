@@ -1,0 +1,80 @@
+semantic_models:
+  - name: pnl
+    description: P&L fact in GBP. Join to accounts, cost centres and legal entities via entities.
+    model: ref('fct_pnl')
+    defaults:
+      agg_time_dimension: period
+    entities:
+      - name: pnl_line
+        type: primary
+        expr: pnl_line_id
+      - name: cost_centre
+        type: foreign
+        expr: cost_centre_code
+      - name: account
+        type: foreign
+        expr: account_code
+      - name: legal_entity
+        type: foreign
+        expr: entity_code
+    dimensions:
+      - name: period
+        type: time
+        type_params:
+          time_granularity: month
+      - name: is_closed_period
+        type: categorical
+        description: True for months whose books are closed (actuals available).
+    measures:
+      - name: actual_gbp
+        agg: sum
+        description: Actuals translated at the monthly actual FX rate.
+      - name: actual_gbp_cc
+        agg: sum
+        description: Actuals translated at the budget FX rate (constant currency).
+      - name: budget_gbp
+        agg: sum
+        description: Budget at the budget FX rate, all months.
+      - name: budget_gbp_closed
+        agg: sum
+        description: Budget for closed months only. Use for variances.
+
+  - name: accounts
+    model: ref('dim_account')
+    entities:
+      - name: account
+        type: primary
+        expr: account_code
+    dimensions:
+      - name: account_name
+        type: categorical
+      - name: account_type
+        type: categorical
+        description: revenue, cogs or opex.
+
+  - name: cost_centres
+    model: ref('dim_cost_centre')
+    entities:
+      - name: cost_centre
+        type: primary
+        expr: cost_centre_code
+    dimensions:
+      - name: cost_centre_name
+        type: categorical
+      - name: owner
+        type: categorical
+        description: Budget holder accountable for the cost centre.
+
+  - name: legal_entities
+    model: ref('dim_legal_entity')
+    entities:
+      - name: legal_entity
+        type: primary
+        expr: entity_code
+    dimensions:
+      - name: entity_code
+        type: categorical
+      - name: entity_name
+        type: categorical
+      - name: currency
+        type: categorical

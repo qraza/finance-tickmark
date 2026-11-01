@@ -1,0 +1,29 @@
+name: finance_copilot
+version: "0.1.0"
+config-version: 2
+profile: finance_copilot
+
+model-paths: ["models"]
+seed-paths: ["seeds"]
+target-path: "target"
+
+seeds:
+  finance_copilot:
+    +schema: raw
+    raw_cost_centres:
+      +column_types: {cost_centre_code: varchar}
+    raw_accounts:
+      +column_types: {account_code: varchar}
+    raw_budget:
+      +column_types: {account_code: varchar, period: date}
+    raw_gl_actuals:
+      +column_types: {account_code: varchar, period: date}
+    raw_fx_rates:
+      +column_types: {period: date}
+
+models:
+  finance_copilot:
+    staging:
+      +materialized: view
+    marts:
+      +materialized: table

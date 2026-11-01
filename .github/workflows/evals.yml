@@ -1,0 +1,42 @@
+name: build-and-eval
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  oracle:
+    # Data, semantic layer and retrieval, no LLM. Runs on every push.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: {python-version: "3.12", cache: pip}
+      - run: pip install -e ".[dev]"
+      - run: make build
+      - run: make test
+      - run: make evals
+      - name: Eval summary
+        if: always()
+        run: cat evals/results/summary.md >> "$GITHUB_STEP_SUMMARY"
+
+  pipeline:
+    # The full system with the LLM. Only when the key is configured, and only on
+    # changes that can move the score, to keep API spend down.
+    needs: oracle
+    if: ${{ github.event_name == 'pull_request' }}
+    runs-on: ubuntu-latest
+    env:
+      ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: {python-version: "3.12", cache: pip}
+      - run: pip install -e ".[dev,llm]"
+      - run: make build
+      - name: Pipeline evals
+        if: ${{ env.ANTHROPIC_API_KEY != '' }}
+        run: make evals-pipeline
+      - name: Eval summary
+        if: always()
+        run: test -f evals/results/summary.md && cat evals/results/summary.md >> "$GITHUB_STEP_SUMMARY" || true

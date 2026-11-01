@@ -1,0 +1,11 @@
+account_code,account_name,account_type
+4000,Subscription revenue,revenue
+4100,Professional services revenue,revenue
+5000,Cloud hosting,cogs
+5100,Support staff costs,cogs
+6000,Salaries and benefits,opex
+6100,Contractors,opex
+6200,Software subscriptions,opex
+6300,Travel and entertainment,opex
+6400,Marketing programmes,opex
+6500,Rent and facilities,opex

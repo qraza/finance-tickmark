@@ -1,0 +1,7 @@
+finance_copilot:
+  target: dev
+  outputs:
+    dev:
+      type: duckdb
+      path: "{{ env_var('FINANCE_DB_PATH', '../finance.duckdb') }}"
+      threads: 4

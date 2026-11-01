@@ -1,0 +1,46 @@
+version: 2
+
+models:
+  - name: fct_pnl
+    description: P&L lines by legal entity, cost centre, account and month, in GBP.
+    columns:
+      - name: pnl_line_id
+        data_tests: [unique, not_null]
+      - name: period
+        data_tests: [not_null]
+      - name: cost_centre_code
+        data_tests:
+          - relationships: {arguments: {to: ref('dim_cost_centre'), field: cost_centre_code}}
+      - name: account_code
+        data_tests:
+          - relationships: {arguments: {to: ref('dim_account'), field: account_code}}
+      - name: entity_code
+        data_tests:
+          - relationships: {arguments: {to: ref('dim_legal_entity'), field: entity_code}}
+      - name: budget_gbp
+        data_tests: [not_null]
+
+  - name: dim_account
+    columns:
+      - name: account_code
+        data_tests: [unique, not_null]
+      - name: account_type
+        data_tests:
+          - accepted_values: {arguments: {values: [revenue, cogs, opex]}}
+
+  - name: dim_cost_centre
+    columns:
+      - name: cost_centre_code
+        data_tests: [unique, not_null]
+
+  - name: dim_legal_entity
+    columns:
+      - name: entity_code
+        data_tests: [unique, not_null]
+
+  - name: metricflow_time_spine
+    time_spine:
+      standard_granularity_column: date_day
+    columns:
+      - name: date_day
+        granularity: day

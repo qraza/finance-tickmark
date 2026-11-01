@@ -1,0 +1,52 @@
+# Ground truth for the planted stories. Generated; do not edit by hand.
+company: Larkspur Ltd (fictional)
+reporting_currency: GBP
+stories:
+- id: S1
+  title: Engineering contractors overspend (platform migration brought forward)
+  where:
+    cost_centre: Engineering
+    account: Contractors
+    entity: UK01
+    period: Q3
+  actual_gbp: 444000.0
+  budget_gbp: 180000.0
+  source_docs:
+  - commentary/2026-07.md
+  - commentary/2026-08.md
+  - commentary/2026-09.md
+  - notes/engineering_q3_migration.md
+- id: S2
+  title: London customer summit moved from June to September
+  where:
+    cost_centre: Marketing
+    account: Marketing programmes
+    period: Q2 and September
+  q2_actual_gbp: 272706.5
+  q2_budget_gbp: 495900.0
+  source_docs:
+  - commentary/2026-06.md
+  - commentary/2026-09.md
+- id: S3
+  title: USD weakened in Q3; US revenue under budget in GBP, on plan in USD
+  where:
+    entity: US01
+    account_type: revenue
+    period: Q3
+  actual_gbp: 3054577.7
+  budget_gbp: 3209242.7
+  source_docs:
+  - commentary/2026-07.md
+  - budget/fy2026_budget_memo.md
+- id: S4
+  title: Customer Operations hiring freeze; support costs under budget
+  where:
+    cost_centre: Customer Operations
+    period: Q3
+  actual_gbp: 687039.6
+  budget_gbp: 818100.0
+  source_docs:
+  - commentary/2026-07.md
+q3_opex:
+  actual_gbp: 5633428.87
+  budget_gbp: 5328480.0
