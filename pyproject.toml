@@ -8,6 +8,7 @@ dependencies = [
   "dbt-duckdb>=1.9",
   "dbt-metricflow>=0.10",
   "duckdb>=1.1",
+  "python-dotenv>=1.0",
   "pyyaml>=6",
 ]
 
