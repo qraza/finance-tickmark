@@ -84,9 +84,19 @@ Current oracle run (21 cases):
 
 | metric | mean | n |
 |---|---|---|
-| citation_recall | 1.00 | 5 |
-| numeric_accuracy | 1.00 | 13 |
-| refusal_correctness | 1.00 | 21 |
+| citation_recall | 1.000 | 5 |
+| numeric_accuracy | 1.000 | 13 |
+| refusal_correctness | 1.000 | 21 |
+
+First pipeline run with Claude Sonnet 5.5 (2 Nov 2026, 21 cases):
+
+| metric | mean | n | note |
+|---|---|---|---|
+| refusal_correctness | 1.000 | 21 | Refused all 5 unanswerable questions; no false refusals |
+| numeric_accuracy | 0.949 | 13 | Both misses were golden cases expecting numbers their question didn't ask for; fixed, re-run pending |
+| citation_recall | 0.600 | 5 | Keyword retrieval misses on "why" questions: the week 3 baseline to beat |
+
+Run to run, Claude sometimes picks a different but valid set of metrics for the same question, so one run is a sample. Repeated runs come in Phase 2.
 
 The runner (`evals/core.py`) knows nothing about finance: a system is any `case -> output` callable and scorers are plain functions, so it can score other LLM systems unchanged.
 

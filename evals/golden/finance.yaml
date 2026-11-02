@@ -6,6 +6,9 @@
 # expected.refuse   true if the only correct answer is a refusal.
 # oracle            reference query/retrieval used by evals.finance:oracle (no LLM).
 #
+# Rule: expected.numbers lists only what the question asks for. Extra numbers in an
+# answer are fine; a missing one is a miss. Don't expect metrics the question doesn't need.
+#
 # 21 cases now; target 30+ by end of week 3. Add one case for every bug you fix.
 
 cases:
@@ -44,7 +47,7 @@ cases:
     question: How much did Engineering spend on contractors in Q3, and what was the budget?
     tags: [metric, story-s1]
     expected:
-      numbers: {opex: 444000.0, opex_budget_to_date: 180000.0, opex_variance: 264000.0}
+      numbers: {opex: 444000.0, opex_budget_to_date: 180000.0}  # spend and budget; the variance isn't asked
     oracle:
       query:
         metrics: [opex, opex_budget_to_date, opex_variance]
@@ -70,10 +73,11 @@ cases:
     question: Is US revenue on plan in Q3 once you strip out currency?
     tags: [metric, story-s3, fx]
     expected:
-      numbers: {revenue: 3054577.7, revenue_constant_currency: 3216094.68, fx_impact_on_revenue: -161516.98}
+      # "on plan" = constant-currency revenue against budget; FX impact is a welcome extra, not required
+      numbers: {revenue_constant_currency: 3216094.68, revenue_budget_to_date: 3209242.7}
     oracle:
       query:
-        metrics: [revenue, revenue_constant_currency, fx_impact_on_revenue]
+        metrics: [revenue_constant_currency, revenue_budget_to_date, fx_impact_on_revenue]
         filters: [{dimension: legal_entity__entity_code, values: [US01]}]
         time_range: {grain: quarter, start: "2026-07-01"}
 

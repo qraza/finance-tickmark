@@ -8,6 +8,7 @@ Exits 1 if any metric's mean is below its threshold, so CI fails the build.
 from __future__ import annotations
 
 import argparse
+import dataclasses
 import json
 import math
 import sys
@@ -42,8 +43,9 @@ def main(argv=None) -> int:
     args.out.mkdir(parents=True, exist_ok=True)
     (args.out / "results.json").write_text(json.dumps(
         {"system": args.system, "summary": summary,
-         "cases": [{"id": r.case_id, "scores": r.scores, "latency_s": round(r.latency_s, 3), "error": r.error}
-                   for r in results]}, indent=2))
+         "cases": [{"id": r.case_id, "scores": r.scores, "latency_s": round(r.latency_s, 3), "error": r.error,
+                    "output": _jsonable(r.output)}
+                   for r in results]}, indent=2, default=str))
 
     lines = ["| metric | mean | n | threshold | |", "|---|---|---|---|---|"]
     failed = False
@@ -51,16 +53,32 @@ def main(argv=None) -> int:
         thr = thresholds.get(name)
         ok = thr is None or (not math.isnan(s["mean"]) and s["mean"] >= thr) or s["n"] == 0
         failed |= not ok
-        lines.append(f"| {name} | {s['mean']:.2f} | {s['n']} | {thr if thr is not None else '-'} | {'✅' if ok else '❌'} |")
+        lines.append(f"| {name} | {s['mean']:.3f} | {s['n']} | {thr if thr is not None else '-'} | {'✅' if ok else '❌'} |")
     table = "\n".join(lines)
     (args.out / "summary.md").write_text(table + "\n")
     print(table)
 
     for r in results:
-        bad = {k: v for k, v in r.scores.items() if v is not None and v < 1}
+        bad = {k: round(v, 2) for k, v in r.scores.items() if v is not None and v < 1}
         if bad or r.error:
             print(f"\n{r.case_id}: {bad}" + (f"\n{r.error}" if r.error else ""))
+            for attr in ("numbers", "refusal_reason"):
+                val = getattr(r.output, attr, None)
+                if val:
+                    print(f"  got {attr}: {val}")
+            cited = [c.source for c in getattr(r.output, "citations", []) or []]
+            if cited:
+                print(f"  got citations: {cited}")
+    print(f"\nPer-case outputs: {args.out / 'results.json'}")
     return 1 if failed else 0
+
+
+def _jsonable(out):
+    if out is None:
+        return None
+    if dataclasses.is_dataclass(out):
+        return dataclasses.asdict(out)
+    return repr(out)
 
 
 if __name__ == "__main__":
