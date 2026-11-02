@@ -43,6 +43,25 @@ class SemanticEngine:
                   configure_file_logging=False)
         return cfg.mf
 
+    def load_dimension_values(self) -> Catalogue:
+        """Fill in each dimension's known values from the warehouse (once per engine).
+
+        The values go into the LLM prompt, so filters use exact names ("Engineering"),
+        and into validation, so a misspelt or invented value is refused, not silently empty.
+        """
+        if any(d.values for d in self.catalogue.dimensions.values()):
+            return self.catalogue
+        # Each simple metric is filtered to one account type, so take the union across all three.
+        base = ["revenue", "cogs", "opex"]
+        values = {}
+        for name in self.catalogue.dimensions:
+            seen = set()
+            for m in base:
+                seen.update(self._mf.get_dimension_values(metric_names=[m], get_group_by_values=name))
+            values[name] = sorted(seen)
+        self.catalogue = self.catalogue.with_dimension_values(values)
+        return self.catalogue
+
     def run(self, query: SemanticQuery) -> QueryResult:
         from metricflow.engine.metricflow_engine import MetricFlowQueryRequest
 

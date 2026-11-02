@@ -53,6 +53,13 @@ class SemanticQuery:
         bad += [f.dimension for f in self.filters if f.dimension not in cat.dimensions]
         if bad:
             raise SemanticQueryError(f"Unknown dimension: {', '.join(bad)}.")
+        for f in self.filters:
+            known = cat.dimensions[f.dimension].values
+            unknown_vals = [v for v in f.values if known and v not in known]
+            if unknown_vals:
+                raise SemanticQueryError(
+                    f"No {f.dimension} called {', '.join(unknown_vals)}. Known: {', '.join(known)}."
+                )
         for o in self.order_by:
             if o.lstrip("-") not in set(self.metrics) | set(self.group_by):
                 raise SemanticQueryError(f"Cannot order by {o}: not selected.")
@@ -93,6 +100,11 @@ class SemanticQuery:
             order_by_names=self.order_by or None,
             limit=self.limit,
         )
+
+    def to_dict(self) -> dict:
+        from dataclasses import asdict
+
+        return {k: v for k, v in asdict(self).items() if v not in (None, [], {})}
 
     @classmethod
     def from_dict(cls, d: dict) -> "SemanticQuery":

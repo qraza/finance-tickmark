@@ -20,6 +20,7 @@ class Answer:
     citations: list[Citation] = field(default_factory=list)
     refused: bool = False
     refusal_reason: str | None = None
+    semantic_query: dict | None = None  # what the LLM asked for, kept for audit and debugging
 
     @classmethod
     def refusal(cls, reason: str) -> "Answer":

@@ -83,6 +83,15 @@ class Catalogue:
         lines.append("Dimensions:")
         for d in self.dimensions.values():
             desc = f": {d.description}" if d.description else ""
-            lines.append(f"- {d.name}{desc}")
+            vals = f" Values: {', '.join(d.values)}." if d.values else ""
+            lines.append(f"- {d.name}{desc}{vals}")
         lines.append("Time: metric_time at " + ", ".join(TIME_GRAINS) + " grain.")
         return "\n".join(lines)
+
+    def with_dimension_values(self, values: dict[str, list[str]]) -> "Catalogue":
+        """Attach the known values of each dimension, used for the prompt and for validation."""
+        dims = {
+            name: Dimension(d.name, d.description, tuple(values.get(name, d.values)))
+            for name, d in self.dimensions.items()
+        }
+        return Catalogue(self.metrics, dims, self.time_dimensions)

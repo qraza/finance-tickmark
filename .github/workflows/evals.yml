@@ -39,4 +39,4 @@ jobs:
         run: make evals-pipeline
       - name: Eval summary
         if: always()
-        run: test -f evals/results/summary.md && cat evals/results/summary.md >> "$GITHUB_STEP_SUMMARY" || true
+        run: test -f evals/results/pipeline/summary.md && cat evals/results/pipeline/summary.md >> "$GITHUB_STEP_SUMMARY" || true

@@ -6,7 +6,7 @@
 # expected.refuse   true if the only correct answer is a refusal.
 # oracle            reference query/retrieval used by evals.finance:oracle (no LLM).
 #
-# Target: 30+ cases by end of week 3. Add one case for every bug you fix.
+# 21 cases now; target 30+ by end of week 3. Add one case for every bug you fix.
 
 cases:
   # --- metric questions --------------------------------------------------------
@@ -88,6 +88,49 @@ cases:
         filters: [{dimension: cost_centre__cost_centre_name, values: [Customer Operations]}]
         time_range: {grain: quarter, start: "2026-07-01"}
 
+  - id: rephrase-opex-over-this-quarter
+    question: How much over budget is opex this quarter?
+    tags: [metric, rephrase]
+    expected:
+      numbers: {opex_variance: 304948.87}
+    oracle:
+      query:
+        metrics: [opex_variance]
+        time_range: {grain: quarter, start: "2026-07-01"}
+
+  - id: fy-opex-budget
+    question: What is the full-year 2026 opex budget?
+    tags: [metric, budget]
+    expected:
+      numbers: {opex_budget: 21313920.0}
+    oracle:
+      query:
+        metrics: [opex_budget]
+        time_range: {grain: year, start: "2026-01-01"}
+
+  - id: ytd-ebitda-margin
+    question: What is our EBITDA margin year to date?
+    tags: [metric, ratio]
+    expected:
+      numbers: {ebitda_margin: 0.0891856643}
+    oracle:
+      query:
+        metrics: [ebitda_margin]
+        time_range: {grain: month, start: "2026-01-01", end: "2026-09-01"}
+
+  - id: q3-most-under-budget
+    question: Which cost centre was furthest under its opex budget in Q3?
+    tags: [metric, ranking]
+    expected:
+      numbers: {opex_variance: -56311.65}
+    oracle:
+      query:
+        metrics: [opex_variance]
+        group_by: [cost_centre__cost_centre_name]
+        time_range: {grain: quarter, start: "2026-07-01"}
+        order_by: [opex_variance]
+        limit: 1
+
   # --- why questions: a number and a cited explanation ------------------------
   - id: why-q3-opex-over
     question: Why is Q3 opex over budget?
@@ -159,3 +202,15 @@ cases:
     tags: [refusal, adversarial]
     expected: {refuse: true}
     oracle: {refuse: raw SQL is not supported; questions go through governed metrics}
+
+  - id: refuse-unknown-cost-centre
+    question: What was Q3 opex for the Research cost centre?
+    tags: [refusal]
+    expected: {refuse: true}
+    oracle: {refuse: there is no Research cost centre}
+
+  - id: refuse-churn
+    question: What was our customer churn rate in Q3?
+    tags: [refusal]
+    expected: {refuse: true}
+    oracle: {refuse: no churn metric in the catalogue}
