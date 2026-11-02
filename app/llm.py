@@ -17,6 +17,7 @@ from .semantic.query import SemanticQuery
 MODEL = os.environ.get("FINANCE_TICKMARK_MODEL", "claude-sonnet-5-5")
 
 SYSTEM = """You translate finance questions about Larkspur Ltd into queries against a governed semantic layer.
+Always respond by calling exactly one tool: `query_metrics` or `refuse`. Never answer in text.
 Rules:
 - Use only the metrics, dimensions and dimension values listed below. If the question needs a metric that does not
   exist, call `refuse` and say which metric is missing. Never approximate one metric with another.
@@ -39,11 +40,17 @@ Rules:
 
 
 def tool_schemas(cat: Catalogue) -> list[dict]:
+    """Strict tools: the API guarantees Claude's input matches these schemas exactly.
+
+    Strict mode needs `additionalProperties: false` on every object and doesn't support
+    numeric limits, so `limit` bounds are enforced in SemanticQuery.validate instead.
+    """
     dims = sorted(cat.dimensions)
     return [
         {
             "name": "query_metrics",
             "description": "Query governed metrics from the semantic layer.",
+            "strict": True,
             "input_schema": {
                 "type": "object",
                 "properties": {
@@ -60,30 +67,38 @@ def tool_schemas(cat: Catalogue) -> list[dict]:
                                 "negate": {"type": "boolean"},
                             },
                             "required": ["dimension", "values"],
+                            "additionalProperties": False,
                         },
                     },
                     "time_range": {
                         "type": "object",
                         "properties": {
                             "grain": {"type": "string", "enum": list(TIME_GRAINS)},
-                            "start": {"type": "string", "description": "ISO date of first period, e.g. 2026-07-01"},
-                            "end": {"type": "string", "description": "ISO date of last period, inclusive"},
+                            "start": {"type": "string", "format": "date",
+                                      "description": "First day of the first period, e.g. 2026-07-01"},
+                            "end": {"type": "string", "format": "date",
+                                    "description": "First day of the last period, inclusive"},
                         },
                         "required": ["grain", "start"],
+                        "additionalProperties": False,
                     },
-                    "order_by": {"type": "array", "items": {"type": "string"}},
-                    "limit": {"type": "integer", "minimum": 1, "maximum": 1000},
+                    "order_by": {"type": "array", "items": {"type": "string"},
+                                 "description": "Metric or group-by names; prefix '-' for descending"},
+                    "limit": {"type": "integer", "description": "Max rows, 1 to 1000"},
                 },
                 "required": ["metrics"],
+                "additionalProperties": False,
             },
         },
         {
             "name": "refuse",
             "description": "Use when the semantic layer cannot answer the question.",
+            "strict": True,
             "input_schema": {
                 "type": "object",
                 "properties": {"reason": {"type": "string"}},
                 "required": ["reason"],
+                "additionalProperties": False,
             },
         },
     ]
@@ -100,7 +115,9 @@ def plan_metric_query(question: str, cat: Catalogue, client=None) -> SemanticQue
         max_tokens=1024,
         system=SYSTEM.format(catalogue=cat.describe()),
         tools=tool_schemas(cat),
-        tool_choice={"type": "any"},
+        # Sonnet/Opus 5.5 reject forced tool use (tool_choice "any"/"tool"). With "auto",
+        # the prompt asks for exactly one tool call and a text-only reply is refused below.
+        tool_choice={"type": "auto"},
         messages=[{"role": "user", "content": question}],
     )
     call = next((b for b in resp.content if b.type == "tool_use"), None)

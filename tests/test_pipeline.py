@@ -48,7 +48,17 @@ def test_prompt_carries_catalogue_and_values(engine):
     answer("Q3 opex?", client=fake, engine=engine)
     call = fake.calls[0]
     assert "Engineering" in call["system"] and "opex_variance" in call["system"]
-    assert call["tool_choice"] == {"type": "any"}
+    assert call["tool_choice"] == {"type": "auto"}  # 5.5 models reject forced tool use
+    assert all(tool["strict"] for tool in call["tools"])
+
+
+def test_text_only_reply_is_refused(engine):
+    class TextOnly(FakeClaude):
+        def create(self, **kwargs):
+            return SimpleNamespace(content=[SimpleNamespace(type="text", text="Opex was about £5m.")])
+
+    ans = answer("Q3 opex?", client=TextOnly("x", {}), engine=engine)
+    assert ans.refused and not ans.numbers
 
 
 def test_model_refusal_passes_through(engine):
