@@ -2,14 +2,16 @@
 #
 # expected.numbers  values computed independently from data_gen (pure Python over the CSVs),
 #                   NOT from dbt or MetricFlow output, so the semantic layer is actually tested.
-# expected.sources  corpus files a good answer must cite.
+# expected.sources  corpus files a good answer must cite (all of them).
+# expected.sources_any  several files explain it equally well; citing any one counts.
 # expected.refuse   true if the only correct answer is a refusal.
-# oracle            reference query/retrieval used by evals.finance:oracle (no LLM).
+# oracle            reference query used by evals.finance:oracle (no LLM). `retrieve: true` runs the
+#                   pipeline's own retrieval on the question, scoped by that query: a perfect planner.
 #
 # Rule: expected.numbers lists only what the question asks for. Extra numbers in an
 # answer are fine; a missing one is a miss. Don't expect metrics the question doesn't need.
 #
-# 21 cases now; target 30+ by end of week 3. Add one case for every bug you fix.
+# 32 cases. Add one for every bug you fix. Add one case for every bug you fix.
 
 cases:
   # --- metric questions --------------------------------------------------------
@@ -141,12 +143,13 @@ cases:
     tags: [why, headline, story-s1]
     expected:
       numbers: {opex_variance: 304948.87}
-      sources: [notes/engineering_q3_migration.md]
+      # the engineering note and the Q3 commentaries all explain the contractor overspend
+      sources_any: [notes/engineering_q3_migration.md, commentary/2026-07.md, commentary/2026-08.md, commentary/2026-09.md]
     oracle:
       query:
         metrics: [opex_variance]
         time_range: {grain: quarter, start: "2026-07-01"}
-      retrieve: why is Q3 opex over budget contractors engineering migration
+      retrieve: true
 
   - id: why-marketing-under-q2
     question: Why were marketing programmes under budget in Q2?
@@ -161,15 +164,71 @@ cases:
           - {dimension: cost_centre__cost_centre_name, values: [Marketing]}
           - {dimension: account__account_name, values: [Marketing programmes]}
         time_range: {grain: quarter, start: "2026-04-01"}
-      retrieve: marketing programmes under budget June summit
+      retrieve: true
 
   - id: why-us-revenue-short
     question: Why is US revenue below budget in Q3?
     tags: [why, story-s3, fx]
     expected:
-      sources: [budget/fy2026_budget_memo.md]
+      numbers: {revenue_variance: -154665.0}
+      # Q3 commentary says "currency, not trading"; the budget memo explains the budget FX rate
+      sources_any: [commentary/2026-07.md, commentary/2026-08.md, commentary/2026-09.md, budget/fy2026_budget_memo.md]
     oracle:
-      retrieve: US revenue below budget dollar budget rate translation
+      query:
+        metrics: [revenue_variance]
+        filters: [{dimension: legal_entity__entity_code, values: [US01]}]
+        time_range: {grain: quarter, start: "2026-07-01"}
+      retrieve: true
+
+  - id: why-custops-august
+    question: What drove the Customer Operations underspend in August?
+    tags: [why, story-s4, scoped]
+    expected:
+      sources: [commentary/2026-08.md]   # August's note, not July's or September's
+    oracle:
+      query:
+        metrics: [cogs_variance, opex_variance]
+        filters: [{dimension: cost_centre__cost_centre_name, values: [Customer Operations]}]
+        time_range: {grain: month, start: "2026-08-01"}
+      retrieve: true
+
+  - id: why-eng-contractors-september
+    question: Why were Engineering contractor costs so high in September?
+    tags: [why, story-s1, scoped]
+    expected:
+      sources_any: [commentary/2026-09.md, notes/engineering_q3_migration.md]
+    oracle:
+      query:
+        metrics: [opex, opex_budget_to_date]
+        filters:
+          - {dimension: cost_centre__cost_centre_name, values: [Engineering]}
+          - {dimension: account__account_name, values: [Contractors]}
+        time_range: {grain: month, start: "2026-09-01"}
+      retrieve: true
+
+  - id: why-marketing-over-september
+    question: Why was marketing spend over budget in September?
+    tags: [why, story-s2, scoped]
+    expected:
+      sources: [commentary/2026-09.md]   # the summit moved from June took place in September
+    oracle:
+      query:
+        metrics: [opex_variance]
+        filters: [{dimension: cost_centre__cost_centre_name, values: [Marketing]}]
+        time_range: {grain: month, start: "2026-09-01"}
+      retrieve: true
+
+  - id: why-hosting-q3
+    question: Why is cloud hosting above budget in Q3?
+    tags: [why, story-s1]
+    expected:
+      sources_any: [notes/engineering_q3_migration.md, commentary/2026-07.md, commentary/2026-08.md, commentary/2026-09.md]
+    oracle:
+      query:
+        metrics: [cogs_variance]
+        filters: [{dimension: account__account_name, values: [Cloud hosting]}]
+        time_range: {grain: quarter, start: "2026-07-01"}
+      retrieve: true
 
   # --- document questions ------------------------------------------------------
   - id: doc-sign-convention
@@ -178,7 +237,7 @@ cases:
     expected:
       sources: [policy/fpa_reporting_policy.md]
     oracle:
-      retrieve: positive variance costs adverse sign convention
+      retrieve: true
 
   - id: doc-materiality
     question: When does a cost-centre owner have to explain a variance?
@@ -186,7 +245,42 @@ cases:
     expected:
       sources: [policy/fpa_reporting_policy.md]
     oracle:
-      retrieve: cost centre owner explain variance materiality threshold
+      retrieve: true
+
+  - id: doc-budget-fx-rate
+    question: What exchange rate is the budget built on?
+    tags: [document]
+    expected:
+      sources: [budget/fy2026_budget_memo.md]
+    oracle: {retrieve: true}
+
+  - id: doc-ebitda-defined
+    question: How is EBITDA defined?
+    tags: [document, routing]   # the old keyword router sent this down the metric path
+    expected:
+      sources: [metrics/metric_definitions.md]
+    oracle: {retrieve: true}
+
+  - id: doc-who-approved-contractors
+    question: Who approved the Engineering contractor ramp?
+    tags: [document, story-s1]
+    expected:
+      sources_any: [notes/engineering_q3_migration.md, commentary/2026-07.md, commentary/2026-08.md, commentary/2026-09.md]
+    oracle: {retrieve: true}
+
+  - id: doc-timing-vs-permanent
+    question: What's the difference between a timing and a permanent variance?
+    tags: [document]
+    expected:
+      sources: [policy/fpa_reporting_policy.md]
+    oracle: {retrieve: true}
+
+  - id: doc-commentary-published
+    question: When is the monthly commentary published?
+    tags: [document]
+    expected:
+      sources: [policy/fpa_reporting_policy.md]
+    oracle: {retrieve: true}
 
   # --- refusals: the semantic layer can't answer these ------------------------
   - id: refuse-nrr
@@ -218,3 +312,15 @@ cases:
     tags: [refusal]
     expected: {refuse: true}
     oracle: {refuse: no churn metric in the catalogue}
+
+  - id: refuse-forecast
+    question: What will Q4 revenue be?
+    tags: [refusal]
+    expected: {refuse: true}
+    oracle: {refuse: no forecast in the governed data; actuals run to September}
+
+  - id: refuse-not-in-documents
+    question: What is the company's parental leave policy?
+    tags: [refusal, document]
+    expected: {refuse: true}
+    oracle: {refuse: the documents don't cover that}

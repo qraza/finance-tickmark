@@ -1,36 +1,25 @@
-"""End-to-end: question -> route -> semantic query and/or retrieval -> cited answer.
+"""End-to-end: question -> Claude's plan -> semantic layer and/or documents -> cited answer.
 
-Week 2 (this file): the metric path is real. Claude plans a semantic query, MetricFlow
-runs it, and the answer carries the numbers, the SQL and deterministic text.
-Document and "why" questions use the BM25 baseline for citations; week 3 replaces
-the router and adds an LLM-written explanation grounded in the retrieved passages.
+    metric question         plan -> MetricFlow -> figures (formatted in code, no LLM prose)
+    "why" question          plan (explain=true) -> MetricFlow -> retrieval scoped by the query
+                            -> Claude writes the reason from passages -> grounding check
+    document question       plan -> retrieval -> Claude writes the answer -> grounding check
+    anything else           refused
+
+Claude routes by choosing a tool, so there is no keyword router. If the written answer
+fails the grounding check, cites nothing, or doesn't come back, the answer falls back
+to the figures and the best-matching passage, with a warning, rather than guessing.
 """
 
 from __future__ import annotations
 
-from enum import Enum
 from functools import lru_cache
 
 from .answer import Answer, Citation
 from .format import render
-from .llm import plan_metric_query
-from .semantic.query import SemanticQueryError
-
-
-class Route(str, Enum):
-    METRIC = "metric"      # "what was Q3 opex vs budget?"
-    DOCUMENT = "document"  # "what is our FX policy?"
-    WHY = "why"            # "why is Q3 opex over budget?" -> number + explanation
-
-
-def route(question: str) -> Route:
-    # TODO(week 3): replace with an LLM classifier and add routing cases to the golden set.
-    q = question.lower()
-    if q.startswith("why") or "explain" in q or "driver" in q:
-        return Route.WHY
-    if any(w in q for w in ("policy", "convention", "how do we", "definition", "good or bad", "have to explain")):
-        return Route.DOCUMENT
-    return Route.METRIC
+from .grounding import ungrounded
+from .llm import plan, write_answer
+from .semantic.query import SemanticQuery, SemanticQueryError
 
 
 @lru_cache(maxsize=1)
@@ -49,13 +38,25 @@ def default_index():
     return BM25Index.from_corpus()
 
 
-def answer_metric(question: str, *, client=None, engine=None) -> Answer:
-    engine = engine or default_engine()
-    plan = plan_metric_query(question, engine.catalogue, client=client)
-    if isinstance(plan, str):
-        return Answer.refusal(plan)
+# --- retrieval -------------------------------------------------------------------
+
+def retrieve(question: str, semantic_query: dict | None = None, *, index=None, k: int = 5):
+    """Search the corpus for a question, scoped by the semantic query when there is one.
+
+    The period limits monthly commentary to the months asked about; filter values
+    (e.g. "Marketing") are added to the search terms. Undated documents always count.
+    """
+    from .rag.scope import scope
+
+    periods, terms = scope(semantic_query)
+    return (index or default_index()).search(" ".join([question, *terms]), k=k, periods=periods)
+
+
+# --- the three paths -------------------------------------------------------------
+
+def run_metric(query: SemanticQuery, engine) -> Answer:
     try:
-        res = engine.run(plan)
+        res = engine.run(query)
     except SemanticQueryError as e:
         return Answer.refusal(str(e))
     except Exception as e:  # noqa: BLE001 - a query that won't compile is refused, never guessed
@@ -66,40 +67,84 @@ def answer_metric(question: str, *, client=None, engine=None) -> Answer:
         return Answer.refusal("there is no data for that period; actuals run to September 2026")
 
     first = dict(zip(res.columns, res.rows[0]))
-    numbers = {c: float(first[c]) for c in metric_cols if first[c] is not None}
     return Answer(
-        text=render(plan, res.columns, res.rows, engine.catalogue),
-        numbers=numbers,
+        text=render(query, res.columns, res.rows, engine.catalogue),
+        numbers={c: float(first[c]) for c in metric_cols if first[c] is not None},
         sql=res.sql,
-        semantic_query=plan.to_dict(),
+        semantic_query=query.to_dict(),
     )
 
 
-def answer_document(question: str, *, index=None, k: int = 3) -> Answer:
-    hits = (index or default_index()).search(question, k=k)
+def explain(question: str, num: Answer, *, client=None, index=None) -> Answer:
+    """A metric answer plus the reason, written by Claude from scoped passages."""
+    hits = [c for c, _ in retrieve(question, num.semantic_query, index=index)]
+    if not hits:
+        num.warnings.append("no documents matched; showing the figures only")
+        return num
+    written = write_answer(question, num.text, hits, client=client)
+    if written is not None and not written.answerable:
+        return Answer(
+            text=f"{num.text}\n\nThe documents don't explain this: {written.text}",
+            numbers=num.numbers, sql=num.sql, semantic_query=num.semantic_query,
+            warnings=["the documents don't explain this variance"],
+        )
+    body, citations, warning = _accept(written, hits, [num.text], list(num.numbers.values()))
+    if body is None:
+        body, citations = _fallback_text(hits), _top_citations(hits)
+    return Answer(
+        text=f"{num.text}\n\n{body}",
+        numbers=num.numbers, sql=num.sql, semantic_query=num.semantic_query,
+        citations=citations, warnings=[w for w in [warning] if w],
+    )
+
+
+def answer_document(question: str, search: str | None = None, *, client=None, index=None) -> Answer:
+    hits = [c for c, _ in retrieve(" ".join(filter(None, [question, search])), index=index)]
     if not hits:
         return Answer.refusal("nothing in the documents matches that question")
-    top = hits[0][0]
-    excerpt = top.text.split("\n", 2)[-1].strip()
-    return Answer(
-        text=f"{excerpt}\n\n[{top.source} › {top.section}]",
-        citations=[Citation(c.source, c.section) for c, _ in hits],
-    )
+    written = write_answer(question, None, hits, client=client)
+    if written is not None and not written.answerable:
+        return Answer.refusal(f"the documents don't answer that ({written.text})")
+    body, citations, warning = _accept(written, hits, [], [])
+    if body is None:
+        body, citations = _fallback_text(hits), _top_citations(hits)
+    return Answer(text=body, citations=citations, warnings=[w for w in [warning] if w])
 
 
 def answer(question: str, *, client=None, engine=None, index=None) -> Answer:
-    r = route(question)
-    if r is Route.METRIC:
-        return answer_metric(question, client=client, engine=engine)
-    if r is Route.DOCUMENT:
-        return answer_document(question, index=index)
-
-    # WHY: the number from the semantic layer, the reason from the documents.
-    num = answer_metric(question, client=client, engine=engine)
-    doc = answer_document(question, index=index)
-    if num.refused and doc.refused:
+    engine = engine or default_engine()
+    p = plan(question, engine.catalogue, client=client)
+    if p.kind == "refuse":
+        return Answer.refusal(p.reason)
+    if p.kind == "document":
+        return answer_document(question, p.search, client=client, index=index)
+    num = run_metric(p.query, engine)
+    if num.refused or not p.explain:
         return num
-    text = "\n\n".join(t for t in [None if num.refused else num.text,
-                                   None if doc.refused else "Context:\n" + doc.text] if t)
-    return Answer(text=text, numbers=num.numbers, sql=num.sql,
-                  citations=doc.citations, semantic_query=num.semantic_query)
+    return explain(question, num, client=client, index=index)
+
+
+# --- checks on what Claude wrote -------------------------------------------------
+
+def _accept(written, hits, figure_texts: list[str], raw_numbers: list[float]):
+    """(text, citations, warning). text None = rejected, use the fallback."""
+    if written is None:
+        return None, [], "the explanation could not be written; showing the best-matching passage"
+    by_id = {c.id: c for c in hits}
+    cited = [by_id[i] for i in dict.fromkeys(written.citation_ids) if i in by_id]
+    if not cited:
+        return None, [], "the explanation cited no passage; showing the best-matching passage"
+    bad = ungrounded(written.text, figure_texts + [c.body for c in cited], raw_numbers)
+    if bad:
+        return None, [], f"the explanation stated figures not in its sources ({', '.join(bad)}); showing the passage"
+    refs = "; ".join(f"{c.source} › {c.section}" for c in cited)
+    return f"{written.text}\n[{refs}]", [Citation(c.source, c.section, c.body) for c in cited], None
+
+
+def _fallback_text(hits) -> str:
+    top = hits[0]
+    return f"Relevant passage:\n{top.body}\n[{top.source} › {top.section}]"
+
+
+def _top_citations(hits, n: int = 3) -> list[Citation]:
+    return [Citation(c.source, c.section, c.body) for c in hits[:n]]

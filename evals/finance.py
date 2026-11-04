@@ -26,12 +26,31 @@ def numeric_accuracy(case: Case, ans: Answer) -> float | None:
 
 
 def citation_recall(case: Case, ans: Answer) -> float | None:
-    """Share of expected sources the answer cited."""
+    """`sources`: share of required sources cited. `sources_any`: 1 if any valid source is cited.
+
+    Use `sources_any` when several documents explain the same thing equally well
+    (the July commentary and the engineering note both explain the contractor overspend).
+    """
+    cited = {c.source for c in ans.citations}
+    if case.expected.get("sources_any"):
+        return float(bool(cited & set(case.expected["sources_any"])))
     expected = case.expected.get("sources")
     if not expected:
         return None
-    cited = {c.source for c in ans.citations}
     return sum(s in cited for s in expected) / len(expected)
+
+
+def citation_precision(case: Case, ans: Answer) -> float | None:
+    """Share of cited sources that are valid for the question. Catches citing the wrong month.
+
+    Reported, not gated: the oracle cites its raw top-5 passages, while the pipeline cites
+    only the passages Claude used, so only the pipeline's precision is meaningful.
+    """
+    valid = set(case.expected.get("sources") or []) | set(case.expected.get("sources_any") or [])
+    if not valid or not ans.citations:
+        return None
+    cited = {c.source for c in ans.citations}
+    return len(cited & valid) / len(cited)
 
 
 def refusal_correctness(case: Case, ans: Answer) -> float | None:
@@ -42,6 +61,7 @@ def refusal_correctness(case: Case, ans: Answer) -> float | None:
 SCORERS = {
     "numeric_accuracy": numeric_accuracy,
     "citation_recall": citation_recall,
+    "citation_precision": citation_precision,
     "refusal_correctness": refusal_correctness,
 }
 
@@ -86,8 +106,11 @@ def oracle(case: Case) -> Answer:
         sql = res.sql
         row = res.rows[0] if res.rows else ()
         numbers = {c: float(v) for c, v in zip(res.columns, row) if isinstance(v, (int, float))}
-    if "retrieve" in o:
-        for chunk, _ in _index().search(o["retrieve"], k=o.get("k", 3)):
+    if o.get("retrieve"):
+        # The pipeline's own retrieval, scoped by the reference query: a perfect planner.
+        from app.pipeline import retrieve
+
+        for chunk, _ in retrieve(case.question, o.get("query"), index=_index()):
             citations.append(Citation(chunk.source, chunk.section))
     return Answer(text="(oracle)", numbers=numbers, sql=sql, citations=citations)
 

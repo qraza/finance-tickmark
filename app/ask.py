@@ -24,8 +24,8 @@ def main(argv=None) -> None:
         raise SystemExit("ANTHROPIC_API_KEY not set: add it to .env (see .env.example).")
     ans = answer(args.question)
     print(ans.text)
-    if ans.citations:
-        print("\nSources: " + "; ".join(f"{c.source} › {c.section}" for c in ans.citations))
+    for w in ans.warnings:
+        print(f"\nNote: {w}")
     if args.query and ans.semantic_query:
         print("\nSemantic query:\n" + json.dumps(ans.semantic_query, indent=2))
     if args.sql and ans.sql:

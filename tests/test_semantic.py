@@ -2,7 +2,7 @@
 
 import pytest
 
-from app.llm import tool_schemas
+from app.llm import plan_tools
 from app.semantic.catalogue import Catalogue
 from app.semantic.query import SemanticQuery, SemanticQueryError
 
@@ -43,5 +43,5 @@ def test_filter_values_are_escaped(cat):
 
 
 def test_tool_schema_enumerates_metrics(cat):
-    schema = tool_schemas(cat)[0]["input_schema"]
+    schema = plan_tools(cat)[0]["input_schema"]
     assert set(schema["properties"]["metrics"]["items"]["enum"]) == set(cat.metrics)

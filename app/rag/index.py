@@ -1,8 +1,12 @@
 """Document retrieval over the corpus, with citable chunks.
 
-Baseline: heading-aware markdown chunking + BM25, pure Python, no dependencies.
-Week 3 of the build: add embeddings (DuckDB `vss` or LanceDB) and fuse with BM25
-(reciprocal rank fusion), then measure whether it beats this baseline on the golden set.
+Chunks are paragraphs, labelled with their document and heading, so one monthly
+commentary yields separate passages for each variance it explains. Commentary
+chunks carry their month, so a search can be scoped to the period the question is
+about (taken from the semantic query Claude chose). Ranking is BM25, pure Python.
+
+Embeddings (hybrid search) are deliberately not here yet: they go in only if they
+beat this on the golden set. See `make evals-retrieval`.
 """
 
 from __future__ import annotations
@@ -18,31 +22,49 @@ _TOKEN = re.compile(r"[a-z0-9]+")
 _STOP = set("the a an and or of to in on for is are was were be by with at as from this that it its".split())
 
 
+_PERIOD = re.compile(r"(\d{4})-(\d{2})\.md$")
+
+
 @dataclass(frozen=True)
 class Chunk:
-    source: str      # corpus-relative path
-    section: str     # nearest heading
-    text: str
+    id: str             # source#n, stable across runs
+    source: str         # corpus-relative path
+    section: str        # nearest heading
+    text: str           # title + heading + paragraph, the text that is searched and shown
+    period: str | None = None  # "2026-07" for monthly commentary, None for undated docs
+
+    @property
+    def body(self) -> str:
+        """The paragraph without the title and heading prefix."""
+        return self.text.split("\n", 2)[-1]
 
 
 def chunk_markdown(path: Path, root: Path = CORPUS) -> list[Chunk]:
-    """One chunk per heading section; the document title is prefixed for context."""
+    """One chunk per paragraph; the document title and heading are prefixed for context."""
     rel = path.relative_to(root).as_posix()
-    title, section, buf, chunks = "", "", [], []
+    m = _PERIOD.search(rel)
+    period = f"{m.group(1)}-{m.group(2)}" if m and rel.startswith("commentary/") else None
+    title, section, chunks = "", "", []
+    para: list[str] = []
 
     def flush():
-        body = "\n".join(buf).strip()
+        body = " ".join(para).strip()
+        para.clear()
         if body:
-            chunks.append(Chunk(rel, section or title, f"{title}\n{section}\n{body}".strip()))
+            chunks.append(Chunk(f"{rel}#{len(chunks)}", rel, section or title,
+                                f"{title}\n{section or title}\n{body}", period))
 
     for line in path.read_text().splitlines():
         if line.startswith("# "):
+            flush()
             title = line[2:].strip()
         elif line.startswith("## "):
             flush()
-            section, buf = line[3:].strip(), []
+            section = line[3:].strip()
+        elif not line.strip():
+            flush()
         else:
-            buf.append(line)
+            para.append(line.strip())
     flush()
     return chunks
 
@@ -66,10 +88,14 @@ class BM25Index:
         chunks = [c for p in sorted(root.rglob("*.md")) for c in chunk_markdown(p, root)]
         return cls(chunks)
 
-    def search(self, query: str, k: int = 5) -> list[tuple[Chunk, float]]:
+    def search(self, query: str, k: int = 5, periods: set[str] | None = None) -> list[tuple[Chunk, float]]:
+        """Top-k chunks by BM25. With `periods`, dated chunks outside them are skipped;
+        undated documents (policy, memos, notes) are always eligible."""
         q = tokenize(query)
         scored = []
         for chunk, tf, length in zip(self.chunks, self.docs, self.lens):
+            if periods is not None and chunk.period is not None and chunk.period not in periods:
+                continue
             s = 0.0
             for t in q:
                 if t in tf:
