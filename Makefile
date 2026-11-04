@@ -21,7 +21,7 @@ evals:           ## oracle evals: data + semantic layer + retrieval, no LLM. CI 
 
 evals-pipeline:  ## full system with the LLM (needs ANTHROPIC_API_KEY in .env)
 	@python -c "import app, os, sys; sys.exit(0 if os.environ.get('ANTHROPIC_API_KEY') else 'ANTHROPIC_API_KEY not set: add it to .env')"
-	python -m evals.run --cases evals/golden/finance.yaml --system evals.finance:pipeline --out evals/results/pipeline
+	python -m evals.run --cases evals/golden/finance.yaml --system evals.finance:pipeline --out evals/results/pipeline --workers 6
 
 ask:             ## make ask Q="What was Q3 opex against budget?"
 	python -m app.ask --sql "$(Q)"

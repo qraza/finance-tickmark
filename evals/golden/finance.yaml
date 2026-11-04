@@ -4,6 +4,7 @@
 #                   NOT from dbt or MetricFlow output, so the semantic layer is actually tested.
 # expected.sources  corpus files a good answer must cite (all of them).
 # expected.sources_any  several files explain it equally well; citing any one counts.
+# expected.sources_ok   valid supporting files, never required; citing them doesn't hurt precision.
 # expected.refuse   true if the only correct answer is a refusal.
 # oracle            reference query used by evals.finance:oracle (no LLM). `retrieve: true` runs the
 #                   pipeline's own retrieval on the question, scoped by that query: a perfect planner.
@@ -157,6 +158,7 @@ cases:
     expected:
       numbers: {opex_variance: -223193.5}
       sources: [commentary/2026-06.md]
+      sources_ok: [budget/fy2026_budget_memo.md]   # explains the summit was budgeted in June
     oracle:
       query:
         metrics: [opex_variance]
@@ -211,6 +213,7 @@ cases:
     tags: [why, story-s2, scoped]
     expected:
       sources: [commentary/2026-09.md]   # the summit moved from June took place in September
+      sources_ok: [budget/fy2026_budget_memo.md]
     oracle:
       query:
         metrics: [opex_variance]
@@ -236,6 +239,7 @@ cases:
     tags: [document]
     expected:
       sources: [policy/fpa_reporting_policy.md]
+      sources_ok: [metrics/metric_definitions.md]   # opex_variance: "Positive is adverse (overspend)"
     oracle:
       retrieve: true
 

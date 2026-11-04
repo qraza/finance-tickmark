@@ -49,9 +49,13 @@ def load_callable(spec: str) -> Callable:
     return getattr(importlib.import_module(mod), attr)
 
 
-def run(cases: list[Case], system: Callable, scorers: dict[str, Scorer]) -> list[CaseResult]:
-    results = []
-    for case in cases:
+def run(cases: list[Case], system: Callable, scorers: dict[str, Scorer], workers: int = 1,
+        progress: Callable[[int, int, CaseResult], None] | None = None) -> list[CaseResult]:
+    """Run every case; results come back in case order. `workers` > 1 runs cases in threads,
+    which suits LLM systems (time is spent waiting on the API). The system must be thread-safe."""
+    from concurrent.futures import ThreadPoolExecutor
+
+    def one(case: Case) -> CaseResult:
         t0 = time.perf_counter()
         try:
             out = system(case)
@@ -63,8 +67,21 @@ def run(cases: list[Case], system: Callable, scorers: dict[str, Scorer]) -> list
             scores = {name: 0.0 for name in scorers}
         else:
             scores = {name: fn(case, out) for name, fn in scorers.items()}
-        results.append(CaseResult(case.id, scores, latency, err, out))
-    return results
+        return CaseResult(case.id, scores, latency, err, out)
+
+    results: list[CaseResult | None] = [None] * len(cases)
+    done = 0
+    with ThreadPoolExecutor(max_workers=max(1, workers)) as pool:
+        futures = {pool.submit(one, c): i for i, c in enumerate(cases)}
+        from concurrent.futures import as_completed
+
+        for fut in as_completed(futures):
+            i = futures[fut]
+            results[i] = fut.result()
+            done += 1
+            if progress:
+                progress(done, len(cases), results[i])
+    return results  # type: ignore[return-value]
 
 
 def summarise(results: list[CaseResult]) -> dict[str, dict[str, float]]:

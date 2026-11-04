@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import logging
 import os
+import threading
 from dataclasses import dataclass
 from functools import cached_property
 from pathlib import Path
@@ -31,6 +32,7 @@ class SemanticEngine:
         self.dbt_dir = dbt_dir
         os.environ.setdefault("FINANCE_TICKMARK_DB_PATH", str(REPO / "finance-tickmark.duckdb"))
         self.catalogue = Catalogue.load(dbt_dir / "target" / "semantic_manifest.json")
+        self._lock = threading.Lock()  # one query at a time; LLM calls still run in parallel
 
     @cached_property
     def _mf(self):
@@ -67,7 +69,8 @@ class SemanticEngine:
 
         query.validate(self.catalogue)
         request = MetricFlowQueryRequest.create(**query.to_mf_args())
-        sql = self._mf.explain(mf_request=request).sql_statement.without_descriptions.sql
-        table = self._mf.query(mf_request=request).result_df
+        with self._lock:
+            sql = self._mf.explain(mf_request=request).sql_statement.without_descriptions.sql
+            table = self._mf.query(mf_request=request).result_df
         return QueryResult(query=query, columns=list(table.column_names),
                            rows=[tuple(r) for r in table.rows], sql=sql)

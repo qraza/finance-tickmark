@@ -26,3 +26,26 @@ def test_citation_recall():
 def test_bm25_finds_engineering_note():
     hits = BM25Index.from_corpus().search("contractor ramp platform migration approval", k=3)
     assert "notes/engineering_q3_migration.md" in {c.source for c, _ in hits}
+
+
+def test_short_sections_stay_whole():
+    """A metric definition and its owner come back as one passage (the EBITDA bug)."""
+    chunks = BM25Index.from_corpus().chunks
+    ebitda = [c for c in chunks if c.section == "EBITDA (`ebitda`)"]
+    assert len(ebitda) == 1 and "Revenue minus cost of sales" in ebitda[0].body and "Owner" in ebitda[0].body
+
+
+def test_long_sections_split_by_paragraph():
+    notes = [c for c in BM25Index.from_corpus().chunks if c.source == "commentary/2026-07.md" and c.section == "Variance notes"]
+    assert len(notes) == 3  # engineering, US revenue, customer operations
+
+
+def test_period_detection():
+    from app.periods import asked_months, mismatch
+
+    assert asked_months("What was opex in Q3?") == {"2026-07", "2026-08", "2026-09"}
+    assert asked_months("What drove the underspend in August?") == {"2026-08"}
+    assert asked_months("What may drive opex?") is None  # "may" the verb, not May the month
+    assert asked_months("Compare Q2 and Q3 opex") is None  # two periods: not checked
+    assert mismatch("Opex in Q3?", {"grain": "quarter", "start": "2026-07-01"}) is None
+    assert mismatch("Opex in Q3?", {"grain": "month", "start": "2026-01-01", "end": "2026-09-01"})

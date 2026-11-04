@@ -162,6 +162,52 @@ def test_unexplained_variance_cites_nothing(engine):
     assert "don't explain" in ans.text and not ans.citations and not ans.refused
 
 
+def test_why_includes_drill_down_with_account_types(engine):
+    fake = FakeClaude(metric(metrics=["opex_variance"], time_range=Q3, explain=True),
+                      written("Mostly Engineering contractors, after the migration was brought forward.", [ENG_NOTE]))
+    ans = answer("Why is Q3 opex over budget?", client=fake, engine=engine)
+    assert "Largest drivers" in ans.text
+    assert "Engineering / Contractors (opex): £264k adverse" in ans.text
+    assert "Marketing / Marketing programmes (opex)" in ans.text
+    assert "Cloud hosting" not in ans.text  # cogs, not part of opex
+    figures = fake.calls[1]["messages"][0]["content"]
+    assert "Engineering / Contractors (opex)" in figures  # Claude sees the drivers too
+
+
+def test_why_passages_cover_each_driver_not_just_the_biggest(engine):
+    fake = FakeClaude(metric(metrics=["opex_variance"], time_range=Q3, explain=True), written("x", [], answerable=False))
+    answer("Why is Q3 opex over budget?", client=fake, engine=engine)
+    tool_ids = fake.calls[1]["tools"][0]["input_schema"]["properties"]["citations"]["items"]["enum"]
+    assert any(i.startswith("commentary/2026-09") for i in tool_ids)  # the Marketing summit
+    assert any(i.startswith("notes/engineering") for i in tool_ids)
+    assert not any(i.startswith("metrics/") for i in tool_ids)  # definitions never explain a variance
+
+
+def test_figure_from_drill_down_counts_as_grounded(engine):
+    fake = FakeClaude(metric(metrics=["opex_variance"], time_range=Q3, explain=True),
+                      written("Engineering contractors are £264k adverse because the migration was brought forward.",
+                              [ENG_NOTE]))
+    ans = answer("Why is Q3 opex over budget?", client=fake, engine=engine)
+    assert not ans.warnings and "£264k adverse because" in ans.text
+
+
+def test_wrong_period_is_replanned(engine):
+    ytd = {"grain": "month", "start": "2026-01-01", "end": "2026-09-01"}
+    rank = dict(metrics=["opex_variance"], group_by=["cost_centre__cost_centre_name"], order_by=["opex_variance"], limit=1)
+    fake = FakeClaude(metric(time_range=ytd, **rank), metric(time_range=Q3, **rank))
+    ans = answer("Which cost centre was furthest under its opex budget in Q3?", client=fake, engine=engine)
+    assert len(fake.calls) == 2 and "Correction" in fake.calls[1]["messages"][0]["content"]
+    assert "Customer Operations" in ans.text
+    assert ans.numbers["opex_variance"] == pytest.approx(-56311.65, abs=0.01)
+
+
+def test_wrong_period_twice_is_refused(engine):
+    ytd = {"grain": "month", "start": "2026-01-01", "end": "2026-09-01"}
+    fake = FakeClaude(metric(metrics=["opex_variance"], time_range=ytd))
+    ans = answer("What was the opex variance in Q3?", client=fake, engine=engine)
+    assert ans.refused and "period" in ans.refusal_reason
+
+
 # --- document path --------------------------------------------------------------
 
 def test_document_question_answered_from_policy(engine):

@@ -43,10 +43,13 @@ def citation_recall(case: Case, ans: Answer) -> float | None:
 def citation_precision(case: Case, ans: Answer) -> float | None:
     """Share of cited sources that are valid for the question. Catches citing the wrong month.
 
-    Reported, not gated: the oracle cites its raw top-5 passages, while the pipeline cites
+    `sources_ok` lists documents that support the answer without being required (the budget
+    memo, which explains why the summit was budgeted in June). Citing them isn't a mistake.
+
+    Reported, not gated: the oracle cites all the passages it retrieved, while the pipeline cites
     only the passages Claude used, so only the pipeline's precision is meaningful.
     """
-    valid = set(case.expected.get("sources") or []) | set(case.expected.get("sources_any") or [])
+    valid = {s for key in ("sources", "sources_any", "sources_ok") for s in case.expected.get(key) or []}
     if not valid or not ans.citations:
         return None
     cited = {c.source for c in ans.citations}
@@ -68,11 +71,10 @@ SCORERS = {
 
 # --- systems -----------------------------------------------------------------
 
-@lru_cache(maxsize=1)
 def _engine():
-    from app.semantic.engine import SemanticEngine
+    from app.pipeline import default_engine  # shared and thread-safe, so --workers works
 
-    return SemanticEngine()
+    return default_engine()
 
 
 @lru_cache(maxsize=1)
@@ -107,11 +109,16 @@ def oracle(case: Case) -> Answer:
         row = res.rows[0] if res.rows else ()
         numbers = {c: float(v) for c, v in zip(res.columns, row) if isinstance(v, (int, float))}
     if o.get("retrieve"):
-        # The pipeline's own retrieval, scoped by the reference query: a perfect planner.
-        from app.pipeline import retrieve
+        # The pipeline's own retrieval on the raw question, as a perfect planner would see it:
+        # "why" cases use the drill-down and driver-targeted search, others the scoped search.
+        from app.pipeline import drivers, retrieve, why_passages
 
-        for chunk, _ in retrieve(case.question, o.get("query"), index=_index()):
-            citations.append(Citation(chunk.source, chunk.section))
+        if "why" in case.tags and "query" in o:
+            ds = drivers(SemanticQuery.from_dict(o["query"]), _engine())
+            chunks = why_passages(case.question, o["query"], ds, index=_index())
+        else:
+            chunks = [c for c, _ in retrieve(case.question, o.get("query"), index=_index())]
+        citations = [Citation(c.source, c.section) for c in chunks]
     return Answer(text="(oracle)", numbers=numbers, sql=sql, citations=citations)
 
 

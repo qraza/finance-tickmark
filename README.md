@@ -33,16 +33,20 @@ This project puts the LLM behind a **semantic layer**. Metrics such as revenue, 
 flowchart LR
     Q[Question] --> P{Claude plans<br/><i>strict tool call</i>}
     P -->|refuse| X[Refuse]
-    P -->|query_metrics| V[Validate against<br/>catalogue]
+    P -->|query_metrics| PC{Period matches<br/>the question?}
+    PC -->|no: re-plan once| P
+    PC --> V[Validate against<br/>catalogue]
     V -->|unknown metric/value| X
     V --> MF[MetricFlow<br/>compiles SQL] --> DB[(DuckDB)]
     DB --> F[Figures<br/><i>formatted in code</i>]
-    P -->|query_metrics<br/>explain=true| S[Retrieve passages<br/>scoped to the query's<br/>period and filters]
+    DB -->|explain=true| D[Drill-down: variance by<br/>cost centre × account]
+    D --> S[Retrieve passages<br/>scoped to the period,<br/>one search per driver]
     P -->|search_documents| S
     S --> W[Claude writes answer<br/><i>cites only given passages</i>]
     W --> G{Grounding check:<br/>every £ and % in sources?}
     G -->|no| FB[Fall back to<br/>figures + passage]
-    F --> A[Answer: figures + SQL<br/>+ explanation + citations]
+    D --> F
+    F --> A[Answer: figures + drivers + SQL<br/>+ explanation + citations]
     G -->|yes| A
 ```
 
@@ -91,7 +95,7 @@ Current oracle run (32 cases):
 | metric | mean | n |
 |---|---|---|
 | citation_recall | 1.000 | 14 |
-| citation_precision | 0.557 | 14 |
+| citation_precision | 0.621 | 14 |
 | numeric_accuracy | 1.000 | 14 |
 | refusal_correctness | 1.000 | 32 |
 
@@ -106,6 +110,17 @@ First pipeline run with Claude Sonnet 5.5 (2 Nov 2026, 21 cases):
 | refusal_correctness | 1.000 | 21 | Refused all 5 unanswerable questions; no false refusals |
 | numeric_accuracy | 0.949 | 13 | Both misses were golden cases expecting numbers their question didn't ask for; fixed, re-run pending |
 | citation_recall | 0.600 | 5 | Keyword retrieval misses on "why" questions: the week 3 baseline to beat |
+
+Second pipeline run (4 Nov 2026, 32 cases), after week 3's Claude routing, scoped retrieval and written answers:
+
+| metric | mean | n | note |
+|---|---|---|---|
+| citation_recall | 0.929 | 14 | Up from 0.600. The miss was a chunking bug: EBITDA's definition was split from its heading |
+| citation_precision | 0.846 | 13 | Claude cites only what it used (the oracle's raw top-5 scores 0.6) |
+| numeric_accuracy | 0.929 | 14 | Claude answered "furthest under budget in Q3" with year-to-date figures |
+| refusal_correctness | 0.969 | 32 | Claude refused the EBITDA question rather than guess from a broken passage |
+
+Each miss led to a fix: short sections now stay whole, a period check re-plans a query whose period doesn't match the question, and "why" answers get a drill-down so a cogs account (hosting) isn't explained as opex.
 
 Run to run, Claude sometimes picks a different but valid set of metrics for the same question, so one run is a sample. Repeated runs come in Phase 2.
 
@@ -132,7 +147,7 @@ SQL:
 SELECT ... FROM main.fct_pnl ...
 ```
 
-Score the real system, LLM included, against the golden set:
+Score the real system, LLM included, against the golden set (6 questions at a time, with a progress line each):
 
 ```bash
 make evals-pipeline
@@ -156,6 +171,8 @@ cd dbt && DBT_PROFILES_DIR=. mf query --metrics opex,opex_budget_to_date,opex_va
 - **Refuse in code, not only in the prompt.** Unknown metrics, invented dimension values ("Research" cost centre), unclosed months and malformed tool calls are all refused server-side, even if the model tries them. Tests cover each one with a fake model.
 - **Claude routes, not keywords.** The planning call chooses `query_metrics`, `search_documents` or `refuse`. The keyword router it replaced sent "How is EBITDA defined?" to the metric path.
 - **Grounded explanations.** Claude writes "why" answers only from retrieved passages and may cite only their ids (an enum). Every £ figure and percentage it writes must appear in the figures or cited passages, or the answer falls back to the figures and the best passage, with a warning (`app/grounding.py`).
+- **Drill-down before explaining.** A "why" answer first breaks the variance down by cost centre and account, with each account's type, from the semantic layer. Claude gets the real drivers (Engineering contractors £264k, the Marketing summit £139k, a £57k hiring-freeze underspend) and one search per driver, so it explains all of them with governed numbers.
+- **The period is checked in code.** If the question names a period (Q3, August, YTD) and Claude's query covers a different one, it re-plans once with the mismatch spelt out, then refuses.
 - **Retrieval scoped by the semantic query.** A "why" question has already been planned as a metric query, so its period and filters scope the document search. That's free precision.
 - **BM25 before vectors.** Retrieval finds a valid source for all 14 retrieval questions without embeddings, so they haven't earned their complexity yet. They go in when a golden case needs them.
 

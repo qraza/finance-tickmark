@@ -1,8 +1,9 @@
 """End-to-end: question -> Claude's plan -> semantic layer and/or documents -> cited answer.
 
-    metric question         plan -> MetricFlow -> figures (formatted in code, no LLM prose)
-    "why" question          plan (explain=true) -> MetricFlow -> retrieval scoped by the query
-                            -> Claude writes the reason from passages -> grounding check
+    metric question         plan -> period check -> MetricFlow -> figures (formatted in code)
+    "why" question          plan (explain=true) -> period check -> MetricFlow -> drill-down by
+                            cost centre and account -> retrieval scoped by the period and
+                            targeted at each driver -> Claude writes the reason -> grounding check
     document question       plan -> retrieval -> Claude writes the answer -> grounding check
     anything else           refused
 
@@ -13,22 +14,33 @@ to the figures and the best-matching passage, with a warning, rather than guessi
 
 from __future__ import annotations
 
+import re
+import threading
 from functools import lru_cache
 
 from .answer import Answer, Citation
 from .format import render
 from .grounding import ungrounded
+from .format import value
 from .llm import plan, write_answer
+from .periods import mismatch
 from .semantic.query import SemanticQuery, SemanticQueryError
 
+_engine_lock = threading.Lock()
+_engine = None
 
-@lru_cache(maxsize=1)
+
 def default_engine():
-    from .semantic.engine import SemanticEngine
+    """One shared engine; thread-safe so evals can run questions in parallel."""
+    global _engine
+    with _engine_lock:
+        if _engine is None:
+            from .semantic.engine import SemanticEngine
 
-    engine = SemanticEngine()
-    engine.load_dimension_values()
-    return engine
+            engine = SemanticEngine()
+            engine.load_dimension_values()
+            _engine = engine
+        return _engine
 
 
 @lru_cache(maxsize=1)
@@ -50,6 +62,77 @@ def retrieve(question: str, semantic_query: dict | None = None, *, index=None, k
 
     periods, terms = scope(semantic_query)
     return (index or default_index()).search(" ".join([question, *terms]), k=k, periods=periods)
+
+
+DRILL_DIMS = ["cost_centre__cost_centre_name", "account__account_name", "account__account_type"]
+WHY_EXCLUDE = ("metrics/",)  # metric definitions say what a metric is, never why it moved
+
+
+def drivers(query: SemanticQuery, engine, n: int = 6) -> list[dict]:
+    """The largest contributions to the asked metric, by cost centre and account.
+
+    Same metric, filters and period as the question; grouped so each row says which
+    cost centre and account moved, and what type the account is (revenue, cogs, opex).
+    """
+    metric = next((m for m in query.metrics if m.endswith("_variance")), query.metrics[0])
+    if metric.endswith(("_pct", "_margin")):
+        return []
+    drill = SemanticQuery(metrics=[metric], group_by=DRILL_DIMS, filters=query.filters,
+                          time_range=query.time_range)
+    try:
+        res = engine.run(drill)
+    except Exception:  # noqa: BLE001 - the drill-down is extra context, never required
+        return []
+    rows = [dict(zip(res.columns, r)) for r in res.rows if r[res.columns.index(metric)] is not None]
+    total = sum(abs(r[metric]) for r in rows) or 1.0
+    rows = sorted(rows, key=lambda r: -abs(r[metric]))
+    return [
+        {"cost_centre": r["cost_centre__cost_centre_name"], "account": r["account__account_name"],
+         "type": r["account__account_type"], "metric": metric, "value": float(r[metric])}
+        for r in rows[:n] if abs(r[metric]) >= 0.05 * total
+    ]
+
+
+def drivers_text(ds: list[dict], engine) -> str:
+    if not ds:
+        return ""
+    label = engine.catalogue.metrics[ds[0]["metric"]].label
+    lines = [f"- {d['cost_centre']} / {d['account']} ({d['type']}): {value(d['metric'], d['value'])}" for d in ds]
+    return f"Largest drivers ({label}, by cost centre and account):\n" + "\n".join(lines)
+
+
+def why_passages(question: str, semantic_query: dict | None, ds: list[dict], *, index=None, cap: int = 8):
+    """Passages for a "why" question: one scoped search on the question, plus one per driver.
+
+    The per-driver searches make sure each material driver (Engineering contractors,
+    the Marketing summit) gets its own explanation, not only the biggest one. Passages
+    that repeat one already picked (April and May say the same thing) are skipped, so
+    each slot brings something new.
+    """
+    from .rag.scope import scope
+
+    idx = index or default_index()
+    periods, terms = scope(semantic_query)
+    searches = [(" ".join([question, *terms]), 3)]
+    searches += [(f"{d['cost_centre']} {d['account']} variance budget", 2) for d in ds[:3]]
+    picked, seen = [], set()
+    for text, n in searches:
+        new = 0
+        for c, _ in idx.search(text, k=n + 4, periods=periods, exclude=WHY_EXCLUDE):
+            key = _gist(c.body)
+            if c.id in {p.id for p in picked} or key in seen:
+                continue
+            picked.append(c)
+            seen.add(key)
+            new += 1
+            if new == n:
+                break
+    return picked[:cap]
+
+
+def _gist(text: str) -> str:
+    """Text with numbers removed: two months' notes that differ only in figures match."""
+    return re.sub(r"[£$%\d.,-]+", "#", text.lower())
 
 
 # --- the three paths -------------------------------------------------------------
@@ -75,24 +158,27 @@ def run_metric(query: SemanticQuery, engine) -> Answer:
     )
 
 
-def explain(question: str, num: Answer, *, client=None, index=None) -> Answer:
-    """A metric answer plus the reason, written by Claude from scoped passages."""
-    hits = [c for c, _ in retrieve(question, num.semantic_query, index=index)]
+def explain(question: str, num: Answer, query: SemanticQuery, *, engine, client=None, index=None) -> Answer:
+    """A metric answer plus the reason, written by Claude from the drill-down and passages."""
+    ds = drivers(query, engine)
+    figures = "\n\n".join(filter(None, [num.text, drivers_text(ds, engine)]))
+    hits = why_passages(question, num.semantic_query, ds, index=index)
     if not hits:
-        num.warnings.append("no documents matched; showing the figures only")
-        return num
-    written = write_answer(question, num.text, hits, client=client)
+        return Answer(text=figures, numbers=num.numbers, sql=num.sql, semantic_query=num.semantic_query,
+                      warnings=["no documents matched; showing the figures only"])
+    written = write_answer(question, figures, hits, client=client)
     if written is not None and not written.answerable:
         return Answer(
-            text=f"{num.text}\n\nThe documents don't explain this: {written.text}",
+            text=f"{figures}\n\nThe documents don't explain this: {written.text}",
             numbers=num.numbers, sql=num.sql, semantic_query=num.semantic_query,
             warnings=["the documents don't explain this variance"],
         )
-    body, citations, warning = _accept(written, hits, [num.text], list(num.numbers.values()))
+    raw = list(num.numbers.values()) + [d["value"] for d in ds]
+    body, citations, warning = _accept(written, hits, [figures], raw)
     if body is None:
         body, citations = _fallback_text(hits), _top_citations(hits)
     return Answer(
-        text=f"{num.text}\n\n{body}",
+        text=f"{figures}\n\n{body}",
         numbers=num.numbers, sql=num.sql, semantic_query=num.semantic_query,
         citations=citations, warnings=[w for w in [warning] if w],
     )
@@ -118,10 +204,17 @@ def answer(question: str, *, client=None, engine=None, index=None) -> Answer:
         return Answer.refusal(p.reason)
     if p.kind == "document":
         return answer_document(question, p.search, client=client, index=index)
+    issue = mismatch(question, p.query.to_dict().get("time_range"))
+    if issue:  # e.g. year-to-date figures for a Q3 question: re-plan once with the mismatch spelt out
+        p = plan(question, engine.catalogue, client=client, feedback=issue)
+        if p.kind == "refuse":
+            return Answer.refusal(p.reason)
+        if p.kind != "metric" or mismatch(question, p.query.to_dict().get("time_range")):
+            return Answer.refusal("the query's period didn't match the period in the question")
     num = run_metric(p.query, engine)
     if num.refused or not p.explain:
         return num
-    return explain(question, num, client=client, index=index)
+    return explain(question, num, p.query, engine=engine, client=client, index=index)
 
 
 # --- checks on what Claude wrote -------------------------------------------------

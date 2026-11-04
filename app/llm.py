@@ -49,6 +49,7 @@ Rules for `query_metrics`:
   "Smallest/least/most under budget": order ascending.
 - "Excluding currency", "constant currency", "strip out FX": revenue_constant_currency and fx_impact_on_revenue.
 - For a "why" question, query the variance the question asks about; the reason comes from documents, not you.
+- When the question names a period (a quarter, a month, YTD), always set `time_range` to exactly that period.
 - Quarter time ranges use the quarter's first day as start: Q1 2026-01-01, Q2 2026-04-01, Q3 2026-07-01.
 
 {catalogue}"""
@@ -59,7 +60,10 @@ Always respond by calling the `write_answer` tool. Never answer in text.
 Rules:
 - Use only the figures and passages provided. Every statement must come from a passage you cite.
 - Do not calculate new numbers. Quote £ amounts and percentages exactly as they appear in the figures or passages.
-- Two to four sentences. Lead with the reason. Say whether a variance is timing or permanent when a passage says so.
+- Two to five sentences. Lead with the reason. Say whether a variance is timing or permanent when a passage says so.
+- The figures may list the largest drivers by cost centre and account, with each account's type (revenue, cogs,
+  opex). Explain the material drivers in order of size, citing a passage for each. Only attribute a driver to a
+  metric when its type matches: a cogs account is not part of opex.
 - Cite the ids of the passages you used, and only those.
 - If the passages don't explain it, set `answerable` to false and say what is missing in `text`."""
 
@@ -188,7 +192,9 @@ def _tool_call(resp):
     return next((b for b in resp.content if b.type == "tool_use"), None)
 
 
-def plan(question: str, cat: Catalogue, client=None) -> Plan:
+def plan(question: str, cat: Catalogue, client=None, feedback: str | None = None) -> Plan:
+    """`feedback` re-plans with a correction, e.g. a period mismatch found by app.periods."""
+    content = question if not feedback else f"{question}\n\n(Correction to your previous plan: {feedback})"
     resp = _client(client).messages.create(
         model=MODEL,
         max_tokens=1024,
@@ -197,7 +203,7 @@ def plan(question: str, cat: Catalogue, client=None) -> Plan:
         # Sonnet/Opus 5.5 reject forced tool use (tool_choice "any"/"tool"). With "auto",
         # the prompt asks for exactly one tool call and a text-only reply is refused.
         tool_choice={"type": "auto"},
-        messages=[{"role": "user", "content": question}],
+        messages=[{"role": "user", "content": content}],
     )
     call = _tool_call(resp)
     if call is None:

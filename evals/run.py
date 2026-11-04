@@ -27,12 +27,19 @@ def main(argv=None) -> int:
     p.add_argument("--tag", help="only run cases with this tag")
     p.add_argument("--out", type=Path, default=Path("evals/results"))
     p.add_argument("--threshold", action="append", default=[], help="metric=value, overrides defaults")
+    p.add_argument("--workers", type=int, default=1, help="cases to run at once (LLM systems: 4-8)")
     args = p.parse_args(argv)
 
     cases = load_cases(args.cases)
     if args.tag:
         cases = [c for c in cases if args.tag in c.tags]
-    results = run(cases, load_callable(args.system), load_callable(args.scorers))
+    def progress(done: int, total: int, r) -> None:
+        ok = not r.error and all(v is None or v >= 1 for v in r.scores.values())
+        print(f"[{done:>{len(str(total))}}/{total}] {'✓' if ok else '✗'} {r.case_id} ({r.latency_s:.1f}s)",
+              file=sys.stderr, flush=True)
+
+    results = run(cases, load_callable(args.system), load_callable(args.scorers),
+                  workers=args.workers, progress=progress)
     summary = summarise(results)
 
     thresholds = dict(DEFAULT_THRESHOLDS)

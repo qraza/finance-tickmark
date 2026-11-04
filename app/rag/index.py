@@ -1,7 +1,8 @@
 """Document retrieval over the corpus, with citable chunks.
 
-Chunks are paragraphs, labelled with their document and heading, so one monthly
-commentary yields separate passages for each variance it explains. Commentary
+Chunks are heading sections, split into paragraphs only when long, so one monthly
+commentary yields a separate passage for each variance it explains while a short
+metric definition stays in one piece. Commentary
 chunks carry their month, so a search can be scoped to the period the question is
 about (taken from the semantic query Claude chose). Ranking is BM25, pure Python.
 
@@ -39,33 +40,51 @@ class Chunk:
         return self.text.split("\n", 2)[-1]
 
 
+SHORT_SECTION = 600  # chars: sections up to this size stay whole, longer ones split by paragraph
+
+
 def chunk_markdown(path: Path, root: Path = CORPUS) -> list[Chunk]:
-    """One chunk per paragraph; the document title and heading are prefixed for context."""
+    """Chunk by heading section; split a section into paragraphs only when it's long.
+
+    Short sections (a metric definition, an owner note) stay whole so a definition and
+    its formula are retrieved together. Long ones (a month's variance notes) split per
+    paragraph so each variance is its own citable passage. The document title and
+    heading are prefixed to every chunk for context.
+    """
     rel = path.relative_to(root).as_posix()
     m = _PERIOD.search(rel)
     period = f"{m.group(1)}-{m.group(2)}" if m and rel.startswith("commentary/") else None
     title, section, chunks = "", "", []
+    paras: list[str] = []
     para: list[str] = []
 
-    def flush():
-        body = " ".join(para).strip()
-        para.clear()
-        if body:
-            chunks.append(Chunk(f"{rel}#{len(chunks)}", rel, section or title,
-                                f"{title}\n{section or title}\n{body}", period))
+    def end_para():
+        if para:
+            paras.append(" ".join(para).strip())
+            para.clear()
+
+    def end_section():
+        end_para()
+        if not paras:
+            return
+        name = section or title
+        groups = ["\n".join(paras)] if sum(map(len, paras)) <= SHORT_SECTION else list(paras)
+        for body in groups:
+            chunks.append(Chunk(f"{rel}#{len(chunks)}", rel, name, f"{title}\n{name}\n{body}", period))
+        paras.clear()
 
     for line in path.read_text().splitlines():
         if line.startswith("# "):
-            flush()
+            end_section()
             title = line[2:].strip()
         elif line.startswith("## "):
-            flush()
+            end_section()
             section = line[3:].strip()
         elif not line.strip():
-            flush()
+            end_para()
         else:
             para.append(line.strip())
-    flush()
+    end_section()
     return chunks
 
 
@@ -88,13 +107,17 @@ class BM25Index:
         chunks = [c for p in sorted(root.rglob("*.md")) for c in chunk_markdown(p, root)]
         return cls(chunks)
 
-    def search(self, query: str, k: int = 5, periods: set[str] | None = None) -> list[tuple[Chunk, float]]:
+    def search(self, query: str, k: int = 5, periods: set[str] | None = None,
+               exclude: tuple[str, ...] = ()) -> list[tuple[Chunk, float]]:
         """Top-k chunks by BM25. With `periods`, dated chunks outside them are skipped;
-        undated documents (policy, memos, notes) are always eligible."""
+        undated documents (policy, memos, notes) are always eligible. `exclude` drops
+        sources by path prefix."""
         q = tokenize(query)
         scored = []
         for chunk, tf, length in zip(self.chunks, self.docs, self.lens):
             if periods is not None and chunk.period is not None and chunk.period not in periods:
+                continue
+            if exclude and chunk.source.startswith(exclude):
                 continue
             s = 0.0
             for t in q:
