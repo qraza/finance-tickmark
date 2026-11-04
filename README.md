@@ -122,6 +122,8 @@ Second pipeline run (4 Nov 2026, 32 cases), after week 3's Claude routing, scope
 
 Each miss led to a fix: short sections now stay whole, a period check re-plans a query whose period doesn't match the question, and "why" answers get a drill-down so a cogs account (hosting) isn't explained as opex.
 
+Third pipeline run (4 Nov 2026), after the drill-down and period check: citation recall 0.929, precision 0.853. Two numeric questions were refused by the new period check itself. Claude had written Q3 as "start 1 July, end 1 September", which MetricFlow reads correctly, but the check read the end as "the quarter starting in September". The check now reads time ranges exactly as the query filter does, with a regression test. A guardrail needs evals too. The US revenue "why" cited nothing, because the drill-down showed revenue by account but not currency, so revenue drill-downs now show the FX translation share.
+
 Run to run, Claude sometimes picks a different but valid set of metrics for the same question, so one run is a sample. Repeated runs come in Phase 2.
 
 The runner (`evals/core.py`) knows nothing about finance: a system is any `case -> output` callable and scorers are plain functions, so it can score other LLM systems unchanged.

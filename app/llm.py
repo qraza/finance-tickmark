@@ -62,8 +62,9 @@ Rules:
 - Do not calculate new numbers. Quote £ amounts and percentages exactly as they appear in the figures or passages.
 - Two to five sentences. Lead with the reason. Say whether a variance is timing or permanent when a passage says so.
 - The figures may list the largest drivers by cost centre and account, with each account's type (revenue, cogs,
-  opex). Explain the material drivers in order of size, citing a passage for each. Only attribute a driver to a
-  metric when its type matches: a cogs account is not part of opex.
+  opex), and how much of a revenue variance is FX translation. Explain the material drivers in order of size,
+  citing a passage for each. Only attribute a driver to a metric when its type matches: a cogs account is not part
+  of opex. If one passage explains the variance as a whole (for example, currency), that is enough to answer.
 - Cite the ids of the passages you used, and only those.
 - If the passages don't explain it, set `answerable` to false and say what is missing in `text`."""
 

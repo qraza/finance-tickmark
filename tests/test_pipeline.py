@@ -208,6 +208,26 @@ def test_wrong_period_twice_is_refused(engine):
     assert ans.refused and "period" in ans.refusal_reason
 
 
+def test_quarter_end_written_as_last_month_is_not_a_mismatch(engine):
+    """Regression: Claude wrote Q3 as start 2026-07-01, end 2026-09-01 and the period check refused it."""
+    q3 = {"grain": "quarter", "start": "2026-07-01", "end": "2026-09-01"}
+    fake = FakeClaude(metric(metrics=["opex_variance"], group_by=["cost_centre__cost_centre_name"],
+                             order_by=["-opex_variance"], limit=1, time_range=q3))
+    ans = answer("Which cost centre had the biggest opex overspend in Q3?", client=fake, engine=engine)
+    assert not ans.refused and len(fake.calls) == 1
+    assert ans.numbers["opex_variance"] == pytest.approx(248443.45, abs=0.01)
+
+
+def test_revenue_why_shows_fx_translation(engine):
+    us = [{"dimension": "legal_entity__entity_code", "values": ["US01"]}]
+    fake = FakeClaude(metric(metrics=["revenue_variance"], filters=us, time_range=Q3, explain=True),
+                      written("x", [], answerable=False))
+    answer("Why is US revenue below budget in Q3?", client=fake, engine=engine)
+    figures = fake.calls[1]["messages"][0]["content"]
+    assert "Of which FX translation: -£162k" in figures
+    assert "The shortfall is currency" in figures  # the US commentary passage is offered
+
+
 # --- document path --------------------------------------------------------------
 
 def test_document_question_answered_from_policy(engine):

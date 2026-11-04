@@ -49,3 +49,15 @@ def test_period_detection():
     assert asked_months("Compare Q2 and Q3 opex") is None  # two periods: not checked
     assert mismatch("Opex in Q3?", {"grain": "quarter", "start": "2026-07-01"}) is None
     assert mismatch("Opex in Q3?", {"grain": "month", "start": "2026-01-01", "end": "2026-09-01"})
+
+
+def test_time_ranges_read_like_metricflow():
+    from app.rag.scope import months_in
+    from app.semantic.query import SemanticQuery
+
+    q3 = {"2026-07", "2026-08", "2026-09"}
+    assert months_in("quarter", "2026-07-01") == q3
+    assert months_in("quarter", "2026-07-01", "2026-09-01") == q3  # end = a date in the last quarter
+    assert months_in("quarter", "2026-08-01") == q3  # snapped to the quarter's start
+    sq = SemanticQuery.from_dict({"metrics": ["opex"], "time_range": {"grain": "quarter", "start": "2026-08-15"}})
+    assert sq.where_clauses() == ["{{ TimeDimension('metric_time', 'quarter') }} = '2026-07-01'"]

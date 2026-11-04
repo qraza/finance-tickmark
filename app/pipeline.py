@@ -86,19 +86,42 @@ def drivers(query: SemanticQuery, engine, n: int = 6) -> list[dict]:
     rows = [dict(zip(res.columns, r)) for r in res.rows if r[res.columns.index(metric)] is not None]
     total = sum(abs(r[metric]) for r in rows) or 1.0
     rows = sorted(rows, key=lambda r: -abs(r[metric]))
-    return [
+    out = [
         {"cost_centre": r["cost_centre__cost_centre_name"], "account": r["account__account_name"],
          "type": r["account__account_type"], "metric": metric, "value": float(r[metric])}
         for r in rows[:n] if abs(r[metric]) >= 0.05 * total
     ]
+    if metric.startswith("revenue"):
+        fx = _fx_impact(query, engine)
+        if fx is not None and abs(fx) >= 0.05 * total:
+            out.append({"cost_centre": None, "account": "FX translation", "type": "revenue",
+                        "metric": "fx_impact_on_revenue", "value": fx})
+    return out
+
+
+def _fx_impact(query: SemanticQuery, engine) -> float | None:
+    """How much of a revenue variance is currency: actual vs budget exchange rates."""
+    try:
+        res = engine.run(SemanticQuery(metrics=["fx_impact_on_revenue"], filters=query.filters,
+                                       time_range=query.time_range))
+        v = res.rows[0][0] if res.rows else None
+        return float(v) if v is not None else None
+    except Exception:  # noqa: BLE001
+        return None
 
 
 def drivers_text(ds: list[dict], engine) -> str:
     if not ds:
         return ""
     label = engine.catalogue.metrics[ds[0]["metric"]].label
-    lines = [f"- {d['cost_centre']} / {d['account']} ({d['type']}): {value(d['metric'], d['value'])}" for d in ds]
-    return f"Largest drivers ({label}, by cost centre and account):\n" + "\n".join(lines)
+    lines = [f"- {d['cost_centre']} / {d['account']} ({d['type']}): {value(d['metric'], d['value'])}"
+             for d in ds if d["cost_centre"]]
+    text = f"Largest drivers ({label}, by cost centre and account):\n" + "\n".join(lines)
+    fx = next((d for d in ds if d["account"] == "FX translation"), None)
+    if fx:
+        text += (f"\nOf which FX translation: {value(fx['metric'], fx['value'])} "
+                 "(actuals at actual exchange rates vs the budget rate)")
+    return text
 
 
 def why_passages(question: str, semantic_query: dict | None, ds: list[dict], *, index=None, cap: int = 8):
@@ -114,7 +137,11 @@ def why_passages(question: str, semantic_query: dict | None, ds: list[dict], *, 
     idx = index or default_index()
     periods, terms = scope(semantic_query)
     searches = [(" ".join([question, *terms]), 3)]
-    searches += [(f"{d['cost_centre']} {d['account']} variance budget", 2) for d in ds[:3]]
+    for d in ds[:3]:
+        if d["account"] == "FX translation":
+            searches.append(("currency dollar weakened exchange rate budget rate constant currency", 2))
+        else:
+            searches.append((f"{d['cost_centre']} {d['account']} variance budget", 2))
     picked, seen = [], set()
     for text, n in searches:
         new = 0

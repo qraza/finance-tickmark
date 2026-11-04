@@ -13,6 +13,16 @@ from dataclasses import dataclass, field
 from .catalogue import TIME_GRAINS, Catalogue
 
 
+def period_start(grain: str, iso: str) -> str:
+    """The first day of the month/quarter/year containing a date: 2026-09-01 at quarter grain -> 2026-07-01."""
+    y, m = int(iso[:4]), int(iso[5:7])
+    if grain == "quarter":
+        m = 3 * ((m - 1) // 3) + 1
+    elif grain == "year":
+        m = 1
+    return f"{y}-{m:02d}-01"
+
+
 class SemanticQueryError(ValueError):
     """The question asks for something the semantic layer cannot answer."""
 
@@ -84,12 +94,16 @@ class SemanticQuery:
             else:
                 clauses.append(f"{col} {'not in' if f.negate else 'in'} ({', '.join(vals)})")
         if self.time_range:
-            t = "{{ TimeDimension('metric_time', '" + self.time_range.grain + "') }}"
-            end = self.time_range.end or self.time_range.start
-            if end == self.time_range.start:
-                clauses.append(f"{t} = '{self.time_range.start}'")
+            g = self.time_range.grain
+            t = "{{ TimeDimension('metric_time', '" + g + "') }}"
+            # Snap to period starts, which is what metric_time__<grain> holds: "end 2026-09-01" at
+            # quarter grain means "through the quarter containing 1 September", i.e. Q3.
+            start = period_start(g, self.time_range.start)
+            end = period_start(g, self.time_range.end or self.time_range.start)
+            if end == start:
+                clauses.append(f"{t} = '{start}'")
             else:
-                clauses.append(f"{t} >= '{self.time_range.start}' and {t} <= '{end}'")
+                clauses.append(f"{t} >= '{start}' and {t} <= '{end}'")
         return clauses
 
     def to_mf_args(self) -> dict:

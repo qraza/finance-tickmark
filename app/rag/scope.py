@@ -12,17 +12,21 @@ from datetime import date
 
 
 def months_in(grain: str, start: str, end: str | None = None) -> set[str]:
-    """All YYYY-MM months covered by a time range, inclusive."""
-    s = date.fromisoformat(start)
-    last = date.fromisoformat(end or start)
+    """All YYYY-MM months a time range covers, read exactly as the query's filter reads it.
+
+    Both ends snap to the start of their period, then every period in between is
+    expanded to its months: quarter 2026-07-01..2026-09-01 is Q3, July to September.
+    """
+    from ..semantic.query import period_start
+
     span = {"month": 1, "quarter": 3, "year": 12}[grain]
-    # extend the last period to its final month
-    y, m = last.year, last.month + span - 1
-    y, m = y + (m - 1) // 12, (m - 1) % 12 + 1
-    out, cy, cm = set(), s.year, s.month
-    while (cy, cm) <= (y, m):
-        out.add(f"{cy}-{cm:02d}")
-        cy, cm = (cy + 1, 1) if cm == 12 else (cy, cm + 1)
+    s = date.fromisoformat(period_start(grain, start))
+    e = date.fromisoformat(period_start(grain, end or start))
+    out, y, m = set(), s.year, s.month
+    last = (e.year, e.month + span - 1) if e.month + span - 1 <= 12 else (e.year + 1, e.month + span - 13)
+    while (y, m) <= last:
+        out.add(f"{y}-{m:02d}")
+        y, m = (y + 1, 1) if m == 12 else (y, m + 1)
     return out
 
 
