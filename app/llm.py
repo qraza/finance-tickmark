@@ -49,7 +49,9 @@ Rules for `query_metrics`:
   "Smallest/least/most under budget": order ascending.
 - "Excluding currency", "constant currency", "strip out FX": revenue_constant_currency and fx_impact_on_revenue.
 - For a "why" question, query the variance the question asks about; the reason comes from documents, not you.
-- When the question names a period (a quarter, a month, YTD), always set `time_range` to exactly that period.
+- Always set `time_range`. When the question names a period (a quarter, a month, YTD), use exactly that period,
+  including for rankings ("which cost centre ... in Q3"). When it names none, use the closed months
+  (grain month, start 2026-01-01, end 2026-09-01), or the full year 2026 for questions about the budget itself.
 - Quarter time ranges use the quarter's first day as start: Q1 2026-01-01, Q2 2026-04-01, Q3 2026-07-01.
 
 {catalogue}"""
@@ -134,7 +136,7 @@ def plan_tools(cat: Catalogue) -> list[dict]:
                                  "description": "Metric or group-by names; prefix '-' for descending"},
                     "limit": {"type": "integer", "description": "Max rows, 1 to 1000"},
                 },
-                "required": ["metrics", "explain"],
+                "required": ["metrics", "explain", "time_range"],
                 "additionalProperties": False,
             },
         },

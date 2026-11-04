@@ -228,6 +228,30 @@ def test_revenue_why_shows_fx_translation(engine):
     assert "The shortfall is currency" in figures  # the US commentary passage is offered
 
 
+def test_ranking_plan_without_time_range_gets_the_question_period(engine):
+    """Regression: Claude's actual plan for this question had no time_range at all (= YTD)."""
+    fake = FakeClaude(tool("query_metrics", {"metrics": ["opex_variance"], "explain": False,
+                                             "group_by": ["cost_centre__cost_centre_name"],
+                                             "order_by": ["opex_variance"], "limit": 1}))
+    ans = answer("Which cost centre was furthest under its opex budget in Q3?", client=fake, engine=engine)
+    assert not ans.refused and len(fake.calls) == 1  # filled in code, no re-plan needed
+    assert "Customer Operations" in ans.text and "Q3 2026" in ans.text
+    assert ans.numbers["opex_variance"] == pytest.approx(-56311.65, abs=0.01)
+
+
+def test_time_range_is_required_in_the_schema(engine):
+    fake = FakeClaude(metric(metrics=["opex"], time_range=Q3))
+    answer("Q3 opex?", client=fake, engine=engine)
+    schema = next(t for t in fake.calls[0]["tools"] if t["name"] == "query_metrics")["input_schema"]
+    assert "time_range" in schema["required"]
+
+
+def test_refused_answer_keeps_the_plan(engine):
+    fake = FakeClaude(metric(metrics=["opex"], time_range={"grain": "month", "start": "2026-10-01"}))
+    ans = answer("Opex actuals in October 2026?", client=fake, engine=engine)
+    assert ans.refused and ans.semantic_query["time_range"]["start"] == "2026-10-01"
+
+
 # --- document path --------------------------------------------------------------
 
 def test_document_question_answered_from_policy(engine):

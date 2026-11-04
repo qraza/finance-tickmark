@@ -6,7 +6,8 @@ August, YTD, this quarter) and compares it with the plan's time range. A mismatc
 triggers one re-plan with the mismatch spelt out; a second mismatch is refused.
 
 Only unambiguous cases are checked: one period named in the question. "Q2 vs Q3" or
-no period at all is left to the model.
+no period at all is left to the model. If the plan has no time range at all (Claude
+left it out of ranking queries), the pipeline fills it from the question instead.
 """
 
 from __future__ import annotations
@@ -25,19 +26,25 @@ _YTD = re.compile(r"\b(ytd|year[- ]to[- ]date)\b", re.IGNORECASE)
 _THIS_Q = re.compile(r"\b(this|latest|current|last closed) quarter\b", re.IGNORECASE)
 
 
-def asked_months(question: str) -> set[str] | None:
-    """The months a question explicitly asks about, or None if it names none or several."""
-    found: list[set[str]] = []
+def asked_range(question: str) -> dict | None:
+    """The time range a question explicitly asks about, or None if it names none or several."""
+    found: list[dict] = []
     for q, y in _QUARTER.findall(question):
-        found.append(months_in("quarter", f"{y or YEAR}-{3 * (int(q) - 1) + 1:02d}-01"))
+        found.append({"grain": "quarter", "start": f"{y or YEAR}-{3 * (int(q) - 1) + 1:02d}-01"})
     for name, y in _MONTH.findall(question):
         idx = next(i for i, m in enumerate(MONTHS) if m.startswith(name))
-        found.append({f"{y or YEAR}-{idx + 1:02d}"})
+        found.append({"grain": "month", "start": f"{y or YEAR}-{idx + 1:02d}-01"})
     if _YTD.search(question):
-        found.append(months_in("month", f"{YEAR}-01-01", f"{YEAR}-09-01"))
+        found.append({"grain": "month", "start": f"{YEAR}-01-01", "end": f"{YEAR}-09-01"})
     if _THIS_Q.search(question):
-        found.append(months_in("quarter", f"{YEAR}-07-01"))
+        found.append({"grain": "quarter", "start": f"{YEAR}-07-01"})
     return found[0] if len(found) == 1 else None
+
+
+def asked_months(question: str) -> set[str] | None:
+    """The months a question explicitly asks about, or None if it names none or several."""
+    r = asked_range(question)
+    return months_in(r["grain"], r["start"], r.get("end")) if r else None
 
 
 def mismatch(question: str, time_range: dict | None) -> str | None:

@@ -23,8 +23,8 @@ from .format import render
 from .grounding import ungrounded
 from .format import value
 from .llm import plan, write_answer
-from .periods import mismatch
-from .semantic.query import SemanticQuery, SemanticQueryError
+from .periods import asked_range, mismatch
+from .semantic.query import SemanticQuery, SemanticQueryError, TimeRange
 
 _engine_lock = threading.Lock()
 _engine = None
@@ -231,17 +231,37 @@ def answer(question: str, *, client=None, engine=None, index=None) -> Answer:
         return Answer.refusal(p.reason)
     if p.kind == "document":
         return answer_document(question, p.search, client=client, index=index)
+    _fill_period(question, p.query)
     issue = mismatch(question, p.query.to_dict().get("time_range"))
-    if issue:  # e.g. year-to-date figures for a Q3 question: re-plan once with the mismatch spelt out
+    if issue:  # the plan covers a different period from the question: re-plan once, spelling it out
+        first = p.query.to_dict()
         p = plan(question, engine.catalogue, client=client, feedback=issue)
         if p.kind == "refuse":
             return Answer.refusal(p.reason)
+        if p.kind == "metric":
+            _fill_period(question, p.query)
         if p.kind != "metric" or mismatch(question, p.query.to_dict().get("time_range")):
-            return Answer.refusal("the query's period didn't match the period in the question")
+            ans = Answer.refusal("the query's period didn't match the period in the question")
+            ans.semantic_query = p.query.to_dict() if p.kind == "metric" else first
+            return ans
     num = run_metric(p.query, engine)
+    if num.refused:
+        num.semantic_query = p.query.to_dict()  # keep the plan, so evals show why it was refused
     if num.refused or not p.explain:
         return num
     return explain(question, num, p.query, engine=engine, client=client, index=index)
+
+
+def _fill_period(question: str, query: SemanticQuery) -> None:
+    """If the plan has no time range but the question names one period, use that period.
+
+    Claude left the time range out of ranking queries ("which cost centre ... in Q3"),
+    which silently means "all closed months". Filling it from the question is deterministic.
+    """
+    if query.time_range is None:
+        r = asked_range(question)
+        if r:
+            query.time_range = TimeRange(**r)
 
 
 # --- checks on what Claude wrote -------------------------------------------------
