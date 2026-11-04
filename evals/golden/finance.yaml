@@ -11,8 +11,10 @@
 #
 # Rule: expected.numbers lists only what the question asks for. Extra numbers in an
 # answer are fine; a missing one is a miss. Don't expect metrics the question doesn't need.
+# A "why" question asks for the number it explains: give it one wherever the scope is unambiguous.
+# Without it, a company-wide answer to a cost-centre question goes unnoticed (it did, in run 4).
 #
-# 32 cases. Add one for every bug you fix. Add one case for every bug you fix.
+# 32 cases. Add one for every bug you fix.
 
 cases:
   # --- metric questions --------------------------------------------------------
@@ -186,6 +188,8 @@ cases:
     question: What drove the Customer Operations underspend in August?
     tags: [why, story-s4, scoped]
     expected:
+      # Customer Operations only: a company-wide August answer (cogs -£4.9k, opex +£57.8k) is wrong
+      numbers: {cogs_variance: -25065.0, opex_variance: -18913.61}
       sources: [commentary/2026-08.md]   # August's note, not July's or September's
     oracle:
       query:
@@ -198,6 +202,7 @@ cases:
     question: Why were Engineering contractor costs so high in September?
     tags: [why, story-s1, scoped]
     expected:
+      numbers: {opex: 150000.0}   # Engineering contractors only, not company-wide September opex
       sources_any: [commentary/2026-09.md, notes/engineering_q3_migration.md]
     oracle:
       query:
@@ -225,6 +230,7 @@ cases:
     question: Why is cloud hosting above budget in Q3?
     tags: [why, story-s1]
     expected:
+      numbers: {cogs_variance: 62738.45}
       sources_any: [notes/engineering_q3_migration.md, commentary/2026-07.md, commentary/2026-08.md, commentary/2026-09.md]
     oracle:
       query:

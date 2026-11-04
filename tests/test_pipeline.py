@@ -252,6 +252,30 @@ def test_refused_answer_keeps_the_plan(engine):
     assert ans.refused and ans.semantic_query["time_range"]["start"] == "2026-10-01"
 
 
+def test_dropped_cost_centre_filter_is_replanned_then_added(engine):
+    """Regression: Claude answered a Customer Operations question with company-wide August figures."""
+    aug = {"grain": "month", "start": "2026-08-01"}
+    company_wide = metric(metrics=["cogs_variance", "opex_variance"], time_range=aug, explain=False)
+    fake = FakeClaude(company_wide, company_wide)  # ignores the correction too
+    ans = answer("How far under budget was Customer Operations in August?", client=fake, engine=engine)
+    assert len(fake.calls) == 2 and "Customer Operations" in fake.calls[1]["messages"][0]["content"]
+    assert ans.numbers["opex_variance"] == pytest.approx(-18913.61, abs=0.01)  # filter added in code
+    assert ans.numbers["cogs_variance"] == pytest.approx(-25065.0, abs=0.01)
+
+
+def test_named_cost_centre_covered_by_group_by_is_fine(engine):
+    fake = FakeClaude(metric(metrics=["opex_variance"], group_by=["cost_centre__cost_centre_name"], time_range=Q3))
+    answer("How did Engineering compare with Marketing on opex in Q3?", client=fake, engine=engine)
+    assert len(fake.calls) == 1
+
+
+def test_filters_and_group_by_are_required_in_the_schema(engine):
+    fake = FakeClaude(metric(metrics=["opex"], time_range=Q3))
+    answer("Q3 opex?", client=fake, engine=engine)
+    schema = next(t for t in fake.calls[0]["tools"] if t["name"] == "query_metrics")["input_schema"]
+    assert {"filters", "group_by", "time_range"} <= set(schema["required"])
+
+
 # --- document path --------------------------------------------------------------
 
 def test_document_question_answered_from_policy(engine):

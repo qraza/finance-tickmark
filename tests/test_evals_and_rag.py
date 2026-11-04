@@ -61,3 +61,16 @@ def test_time_ranges_read_like_metricflow():
     assert months_in("quarter", "2026-08-01") == q3  # snapped to the quarter's start
     sq = SemanticQuery.from_dict({"metrics": ["opex"], "time_range": {"grain": "quarter", "start": "2026-08-15"}})
     assert sq.where_clauses() == ["{{ TimeDimension('metric_time', 'quarter') }} = '2026-07-01'"]
+
+
+def test_named_values():
+    from app.mentions import named_values
+    from app.pipeline import default_engine
+
+    cat = default_engine().catalogue
+    assert named_values("What drove the customer operations underspend?", cat) == [
+        ("cost_centre__cost_centre_name", "Customer Operations")]  # multi-word: any case
+    assert named_values("How much did engineering spend?", cat) == []  # single word: case must match
+    assert named_values("Why were Marketing programmes low?", cat) == [
+        ("account__account_name", "Marketing programmes")]  # the longer value wins over "Marketing"
+    assert named_values("What was Q3 opex?", cat) == []  # account types aren't mentions

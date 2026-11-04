@@ -23,6 +23,7 @@ from .format import render
 from .grounding import ungrounded
 from .format import value
 from .llm import plan, write_answer
+from .mentions import add_filters, describe, uncovered
 from .periods import asked_range, mismatch
 from .semantic.query import SemanticQuery, SemanticQueryError, TimeRange
 
@@ -232,10 +233,10 @@ def answer(question: str, *, client=None, engine=None, index=None) -> Answer:
     if p.kind == "document":
         return answer_document(question, p.search, client=client, index=index)
     _fill_period(question, p.query)
-    issue = mismatch(question, p.query.to_dict().get("time_range"))
-    if issue:  # the plan covers a different period from the question: re-plan once, spelling it out
+    issues = _plan_issues(question, p.query, engine.catalogue)
+    if issues:  # the plan doesn't match the question's period or names: re-plan once, spelling it out
         first = p.query.to_dict()
-        p = plan(question, engine.catalogue, client=client, feedback=issue)
+        p = plan(question, engine.catalogue, client=client, feedback=" ".join(issues))
         if p.kind == "refuse":
             return Answer.refusal(p.reason)
         if p.kind == "metric":
@@ -244,12 +245,25 @@ def answer(question: str, *, client=None, engine=None, index=None) -> Answer:
             ans = Answer.refusal("the query's period didn't match the period in the question")
             ans.semantic_query = p.query.to_dict() if p.kind == "metric" else first
             return ans
+        add_filters(p.query, uncovered(question, p.query, engine.catalogue))  # still missing: add in code
     num = run_metric(p.query, engine)
     if num.refused:
         num.semantic_query = p.query.to_dict()  # keep the plan, so evals show why it was refused
     if num.refused or not p.explain:
         return num
     return explain(question, num, p.query, engine=engine, client=client, index=index)
+
+
+def _plan_issues(question: str, query: SemanticQuery, cat) -> list[str]:
+    """What's wrong with a metric plan, judged against the question itself, in code."""
+    issues = []
+    period = mismatch(question, query.to_dict().get("time_range"))
+    if period:
+        issues.append(period)
+    missing = uncovered(question, query, cat)
+    if missing:
+        issues.append(describe(missing))
+    return issues
 
 
 def _fill_period(question: str, query: SemanticQuery) -> None:

@@ -42,8 +42,9 @@ Rules for `query_metrics`:
 - "Against budget" / "vs budget": request the actual metric, its *_budget_to_date metric and its *_variance metric.
   "Over/under budget by how much": the *_variance metric. Use *_budget (not *_budget_to_date) only for questions
   about the budget itself, such as the full-year budget.
-- An account (e.g. Contractors) or cost centre (e.g. Engineering) is a filter on the matching dimension, using the
-  exact value listed. Use the metric for that account's type: opex accounts with opex metrics, and so on.
+- Every cost centre, account or entity the question names (e.g. Engineering, Contractors, Customer Operations) is a
+  filter on the matching dimension, using the exact value listed; leave `filters` empty only for company-wide
+  questions. `group_by` is empty unless the question asks for a breakdown or ranking. Use the metric for that account's type: opex accounts with opex metrics, and so on.
   A cost centre's total costs are its cogs and opex metrics together.
 - "Which ... biggest/most": group by that dimension, order by the metric descending ("-name"), limit 1.
   "Smallest/least/most under budget": order ascending.
@@ -136,7 +137,9 @@ def plan_tools(cat: Catalogue) -> list[dict]:
                                  "description": "Metric or group-by names; prefix '-' for descending"},
                     "limit": {"type": "integer", "description": "Max rows, 1 to 1000"},
                 },
-                "required": ["metrics", "explain", "time_range"],
+                # All required (empty lists allowed): strict mode writes required fields first, and when
+                # filters were optional Claude dropped them ("Customer Operations" became company-wide).
+                "required": ["metrics", "explain", "time_range", "filters", "group_by"],
                 "additionalProperties": False,
             },
         },
