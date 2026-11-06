@@ -307,6 +307,14 @@ def test_citations_limited_to_retrieved_passages(engine):
 def test_formatting():
     assert money(5_633_428.87) == "£5.63m"
     assert money(-56_311.65) == "-£56k"
-    assert value("revenue_variance", -130_728.77) == "-£131k adverse"
-    assert value("opex_variance", -56_311.65) == "-£56k favourable"
+    assert value("revenue_variance", -130_728.77) == "£131k adverse"  # the label carries the sign
+    assert value("opex_variance", -56_311.65) == "£56k favourable"
+    assert value("fx_impact_on_revenue", -161_516.98) == "-£162k"  # not a variance: keeps its sign
+
+
+def test_source_labels_say_the_period():
+    from app.format import source_label
+
+    assert source_label("commentary/2026-07.md") == "Monthly commentary · July 2026 (that month's figures only)"
+    assert source_label("notes/engineering_q3_migration.md") == "Cost-centre owner note"
     assert value("ebitda_margin", 0.256) == "25.6%"

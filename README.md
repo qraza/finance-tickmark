@@ -6,6 +6,9 @@
 
 `RAG` · `text-to-SQL` · `semantic layer` · `dbt` · `MetricFlow` · `DuckDB` · `LLM evals` · `FP&A`
 
+![The demo answering "Why is Q3 opex over budget?": the variance, the drivers from the semantic layer, and Claude's sourced explanation](docs/demo.png)
+*A real recorded answer from the [demo](#demo): figures and drivers from the semantic layer, explanation written by Claude from cited passages.*
+
 > **The LLM never invents a metric.** It can only select metrics and dimensions from a dbt semantic layer, and every answer is scored against a golden set.
 
 ```

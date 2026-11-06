@@ -289,7 +289,8 @@ def commentary(budget, actual) -> dict[int, str]:
             co_b = agg(budget, "budget", mm, cost_centre_code="CC400")
             notes.append(
                 f"Customer Operations costs were {gbp(co_a)} against {gbp(co_b)}. The hiring freeze "
-                "announced in July has left four support roles vacant. Service levels are being "
+                "announced in July has left four support roles and two back-office roles vacant, so both "
+                "support staff costs and salaries and benefits are below budget. Service levels are being "
                 "watched weekly; backfill is planned for Q4 once the freeze lifts."
             )
         if m == 9:

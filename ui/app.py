@@ -23,9 +23,10 @@ sys.path.insert(0, str(REPO))
 
 from app.answer import Answer  # noqa: E402  (loads .env too)
 from app.demo import EXAMPLES, load_cache  # noqa: E402
-from app.format import value  # noqa: E402
+from app.format import source_label, value  # noqa: E402
 
-ADVERSE, FAVOURABLE = "#e34948", "#2a78d6"  # diverging pair, validated light and dark (dataviz skill)
+# Diverging pair, validated with the dataviz skill's checker: light steps on a light theme, dark steps on dark.
+COLOURS = {"light": ("#e34948", "#2a78d6"), "dark": ("#e66767", "#3987e5")}
 DB = Path(os.environ.get("FINANCE_TICKMARK_DB_PATH", REPO / "finance-tickmark.duckdb"))
 LIVE = bool(os.environ.get("ANTHROPIC_API_KEY")) and DB.exists()
 
@@ -46,14 +47,23 @@ def _cache():
     return load_cache()
 
 
-def ask(question: str) -> Answer | None:
-    if LIVE:
-        from app.pipeline import answer
+def ask_live(question: str) -> Answer:
+    from app.pipeline import answer
 
-        with st.spinner("Claude is planning the query, MetricFlow is running it…"):
-            return answer(question, engine=_engine())
+    with st.spinner("Claude is planning the query, MetricFlow is running it…"):
+        return answer(question, engine=_engine())
+
+
+def recorded(question: str) -> Answer | None:
     answers, _ = _cache()
     return answers.get(question)
+
+
+def theme() -> str:
+    try:
+        return st.context.theme.type or "light"
+    except Exception:  # noqa: BLE001 - older Streamlit, or no browser context
+        return "light"
 
 
 # --- rendering --------------------------------------------------------------------
@@ -96,7 +106,7 @@ def show_drivers(a: Answer) -> None:
     bars = alt.Chart(df).mark_bar(size=20, cornerRadiusEnd=4).encode(
         y=alt.Y("driver:N", sort=list(df["driver"]), title=None, axis=alt.Axis(labelLimit=420, labelFontSize=13)),
         x=alt.X("value:Q", title="Variance (£)", axis=alt.Axis(format="~s", gridOpacity=0.3)),
-        color=alt.Color("effect:N", scale=alt.Scale(domain=["Adverse", "Favourable"], range=[ADVERSE, FAVOURABLE]),
+        color=alt.Color("effect:N", scale=alt.Scale(domain=["Adverse", "Favourable"], range=list(COLOURS.get(theme(), COLOURS["light"]))),
                         legend=alt.Legend(title=None, orient="top")),
         tooltip=[alt.Tooltip("driver:N", title="Driver")],
     )
@@ -116,7 +126,7 @@ def show_explanation(a: Answer) -> None:
     if a.citations:
         with st.expander(f"Sources ({len(a.citations)})", expanded=False):
             for c in a.citations:
-                st.markdown(f"**{c.source}** › {c.section}")
+                st.markdown(f"**{source_label(c.source)}** › {c.section}  \n`{c.source}`")
                 if c.quote:
                     st.markdown(f"> {c.quote}")
 
@@ -180,7 +190,17 @@ question = typed.strip() if typed.strip() else picked
 
 if question:
     st.subheader(question)
-    ans = ask(question)
+    answer_key = f"live::{question}"
+    ans = st.session_state.get(answer_key)
+    if ans is None and not typed.strip():
+        ans = recorded(question)  # examples replay their recorded answer: instant, and free
+        if ans is not None:
+            _, meta = _cache()
+            st.caption(f"Recorded answer ({meta.get('recorded_at', '')}, {meta.get('model', '')}).")
+            if LIVE and st.button("Re-ask live", help="Ask Claude now instead of showing the recorded answer"):
+                ans = st.session_state[answer_key] = ask_live(question)
+    if ans is None and LIVE:
+        ans = st.session_state[answer_key] = ask_live(question)
     if ans is None:
         st.warning("That example hasn't been recorded yet. Run `make demo-cache` with an API key.")
     else:

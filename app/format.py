@@ -6,6 +6,7 @@ rows, so a figure in the text can't drift from the figure the query returned.
 
 from __future__ import annotations
 
+import re
 from datetime import date
 
 from .semantic.catalogue import Catalogue
@@ -28,11 +29,25 @@ def money(v: float) -> str:
 def value(metric: str, v: float) -> str:
     if metric.endswith("_pct") or metric.endswith("_margin"):
         return f"{v * 100:.1f}%"
-    text = money(v)
     if metric.endswith("_variance") and v != 0:
+        # FP&A convention: the label carries the direction, so no minus sign ("£57k favourable")
         good = metric.startswith(FAVOURABLE_WHEN_POSITIVE) == (v > 0)
-        text += " favourable" if good else " adverse"
-    return text
+        return f"{money(abs(v))} {'favourable' if good else 'adverse'}"
+    return money(v)
+
+
+_MONTHS = ["January", "February", "March", "April", "May", "June", "July", "August", "September",
+           "October", "November", "December"]
+_DOCS = {"budget/": "FY2026 budget memo", "policy/": "FP&A reporting policy",
+         "notes/": "Cost-centre owner note", "metrics/": "Metric definitions"}
+
+
+def source_label(path: str) -> str:
+    """A reader-facing name for a corpus file that says what period its figures cover."""
+    m = re.match(r"commentary/(\d{4})-(\d{2})\.md$", path)
+    if m:
+        return f"Monthly commentary · {_MONTHS[int(m.group(2)) - 1]} {m.group(1)} (that month's figures only)"
+    return next((label for prefix, label in _DOCS.items() if path.startswith(prefix)), path)
 
 
 def period(q: SemanticQuery) -> str | None:
