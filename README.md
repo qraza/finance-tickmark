@@ -6,7 +6,7 @@
 
 `RAG` · `text-to-SQL` · `semantic layer` · `dbt` · `MetricFlow` · `DuckDB` · `LLM evals` · `FP&A`
 
-**▶ Demo** · [try it live](https://finance-tickmark.streamlit.app)
+**▶ Demo** · [open the interactive demo](https://finance-tickmark.streamlit.app)
    
 https://github.com/user-attachments/assets/4ef1d2e9-301a-4333-a883-64c2053eb2b7
 
