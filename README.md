@@ -1,10 +1,14 @@
-# finance-tickmark
+[streamlit-app-2026-11-06-17-26-33.webm](https://github.com/user-attachments/assets/e844acf5-2f94-4447-9bc4-03a1fdec69d5)# finance-tickmark
 
 **A RAG and text-to-SQL system for FP&A questions.** The LLM's queries go through a dbt semantic layer (MetricFlow), so it picks governed metrics instead of writing raw SQL against tables. Every answer comes with **the number, the SQL that produced it, and a cited source for the explanation**, and every change is gated by evals in CI.
 
 *An auditor's tickmark says a figure was checked against its source. This puts one on every answer.*
 
 `RAG` · `text-to-SQL` · `semantic layer` · `dbt` · `MetricFlow` · `DuckDB` · `LLM evals` · `FP&A`
+
+**▶ Demo** · [try it live](https://finance-tickmark.streamlit.app)
+   
+https://github.com/user-attachments/assets/4ef1d2e9-301a-4333-a883-64c2053eb2b7
 
 ![The demo answering "Why is Q3 opex over budget?": the variance, the drivers from the semantic layer, and Claude's sourced explanation](docs/demo.png)
 *A real recorded answer from the [demo](#demo): figures and drivers from the semantic layer, explanation written by Claude from cited passages.*
