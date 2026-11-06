@@ -1,4 +1,4 @@
-[streamlit-app-2026-11-06-17-26-33.webm](https://github.com/user-attachments/assets/e844acf5-2f94-4447-9bc4-03a1fdec69d5)# finance-tickmark
+# finance-tickmark
 
 **A RAG and text-to-SQL system for FP&A questions.** The LLM's queries go through a dbt semantic layer (MetricFlow), so it picks governed metrics instead of writing raw SQL against tables. Every answer comes with **the number, the SQL that produced it, and a cited source for the explanation**, and every change is gated by evals in CI.
 
