@@ -1,0 +1,8 @@
+# For the hosted demo on Streamlit Community Cloud, which looks for this file next to
+# ui/app.py. The hosted demo runs in replay mode (demo/answers.json), so it needs no
+# dbt, MetricFlow or API key. Locally, install the whole project: make setup.
+streamlit>=1.50
+altair>=5
+pandas>=2
+python-dotenv>=1.0
+pyyaml>=6

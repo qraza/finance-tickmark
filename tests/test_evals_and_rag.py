@@ -74,3 +74,17 @@ def test_named_values():
     assert named_values("Why were Marketing programmes low?", cat) == [
         ("account__account_name", "Marketing programmes")]  # the longer value wins over "Marketing"
     assert named_values("What was Q3 opex?", cat) == []  # account types aren't mentions
+
+
+def test_answer_round_trips_through_the_demo_cache(tmp_path):
+    import json
+
+    from app.answer import Answer, Citation
+    from app.demo import load_cache
+
+    a = Answer("t", numbers={"opex": 1.0}, citations=[Citation("policy/x.md", "S", "q")], question="Q?",
+               drivers=[{"cost_centre": "Engineering", "value": 1.0}], table={"columns": ["opex"], "rows": [[1.0]]})
+    path = tmp_path / "answers.json"
+    path.write_text(json.dumps({"meta": {"model": "m"}, "answers": [a.to_dict()]}))
+    answers, meta = load_cache(path)
+    assert answers["Q?"] == a and meta["model"] == "m"

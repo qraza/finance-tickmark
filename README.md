@@ -103,36 +103,43 @@ Oracle precision is low by design: it cites its raw top 5 passages. In the pipel
 
 **Scoping, measured.** On the three month-specific "why" questions, unscoped search cites 6 commentary passages from the wrong month (July and September for an August question). Scoped by the semantic query's period, it cites none.
 
-First pipeline run with Claude Sonnet 5.5 (2 Nov 2026, 21 cases):
+### Eval history
 
-| metric | mean | n | note |
-|---|---|---|---|
-| refusal_correctness | 1.000 | 21 | Refused all 5 unanswerable questions; no false refusals |
-| numeric_accuracy | 0.949 | 13 | Both misses were golden cases expecting numbers their question didn't ask for; fixed, re-run pending |
-| citation_recall | 0.600 | 5 | Keyword retrieval misses on "why" questions: the week 3 baseline to beat |
+Every pipeline run with Claude Sonnet 5.5, and what each one found. Recall, numbers and refusals are gated in CI; precision is reported.
 
-Second pipeline run (4 Nov 2026, 32 cases), after week 3's Claude routing, scoped retrieval and written answers:
+| Run | Change being tested | Recall | Precision | Numbers | Refusals | What it found → fix |
+|---|---|---|---|---|---|---|
+| 1 · 2 Nov | Week 2 metric path, 21 cases | 0.600 | – | 0.949 | 1.000 | Two golden cases expected numbers their question didn't ask for → golden fixed |
+| 2 · 2 Nov | Golden fix | 0.600 | – | 1.000 | 1.000 | Keyword search misses "why" sources → week 3 |
+| 3 · 4 Nov | Week 3: Claude routing, scoped retrieval, written answers, 32 cases | 0.929 | 0.846 | 0.929 | 0.969 | EBITDA's definition split from its heading (Claude refused rather than guess) → short sections stay whole. Hosting explained as opex → drill-down with account types |
+| 4 · 4 Nov | Drill-down, period check | 0.929 | 0.853 | 0.857 | 0.938 | The new period check misread "Q3, end 1 September" and refused correct queries → reads periods exactly as MetricFlow does. Revenue "why" lacked currency → FX line |
+| 5 · 4 Nov | Period-check fix | 1.000 | 0.851 | 0.857 | 0.938 | Printing Claude's plan showed it left `time_range` out of rankings (= all closed months) → required field, filled from the question |
+| 6 · 4 Nov | `time_range` required | 1.000 | 0.863 | 1.000 | 1.000 | Every gate passed, yet two "why" answers were company-wide: dropped filters, and those cases had no expected numbers → golden numbers, required `filters`, a code check for named cost centres |
+| 7 · 4 Nov | Dimension check, 17 numeric checks | 1.000 | 0.851 | 1.000 | 1.000 | All gates pass with the blind spot closed |
 
-| metric | mean | n | note |
-|---|---|---|---|
-| citation_recall | 0.929 | 14 | Up from 0.600. The miss was a chunking bug: EBITDA's definition was split from its heading |
-| citation_precision | 0.846 | 13 | Claude cites only what it used (the oracle's raw top-5 scores 0.6) |
-| numeric_accuracy | 0.929 | 14 | Claude answered "furthest under budget in Q3" with year-to-date figures |
-| refusal_correctness | 0.969 | 32 | Claude refused the EBITDA question rather than guess from a broken passage |
-
-Each miss led to a fix: short sections now stay whole, a period check re-plans a query whose period doesn't match the question, and "why" answers get a drill-down so a cogs account (hosting) isn't explained as opex.
-
-Third pipeline run (4 Nov 2026), after the drill-down and period check: citation recall 0.929, precision 0.853. Two numeric questions were refused by the new period check itself. Claude had written Q3 as "start 1 July, end 1 September", which MetricFlow reads correctly, but the check read the end as "the quarter starting in September". The check now reads time ranges exactly as the query filter does, with a regression test. A guardrail needs evals too. The US revenue "why" cited nothing, because the drill-down showed revenue by account but not currency, so revenue drill-downs now show the FX translation share. The fourth run (recall 1.000) showed the real cause of the ranking refusals by printing Claude's plan: it left `time_range` out of ranking queries entirely, which silently means "all closed months". That was also the earlier "YTD" error. `time_range` is now a required field in the strict schema, so the API enforces it, and a plan without one is filled from the question's period in code. The fifth run passed every gate, yet two "why" answers used company-wide figures: Claude had dropped the Customer Operations and Engineering filters. Those golden cases had no expected numbers, so nothing failed. Now every "why" case with an unambiguous scope has one, `filters` and `group_by` are required fields, and a code check re-plans (then adds the filter) when the question names a cost centre, account or entity the plan ignores. Passing evals only mean something if the golden set checks the right things.
+Two lessons the table carries: a guardrail needs evals too (run 4), and passing evals only mean something if the golden set checks the right things (run 6).
 
 Run to run, Claude sometimes picks a different but valid set of metrics for the same question, so one run is a sample. Repeated runs come in Phase 2.
 
 The runner (`evals/core.py`) knows nothing about finance: a system is any `case -> output` callable and scorers are plain functions, so it can score other LLM systems unchanged.
 
+## Demo
+
+```bash
+make demo        # Streamlit app at http://localhost:8501
+```
+
+Pick an example or type a question. Each answer shows the figures, the drivers behind a "why" (from the semantic layer), Claude's explanation with its sources, the semantic query Claude chose, and the SQL MetricFlow ran.
+
+The app runs **live** when `ANTHROPIC_API_KEY` is in `.env` and the database is built. Otherwise it **replays** `demo/answers.json`: real answers to the example questions, recorded with `make demo-cache` and labelled with the model, date and commit. The hosted demo uses replay, so a public page never spends an API key.
+
+**Hosting it on Streamlit Community Cloud (free):** sign in at share.streamlit.io with GitHub → *Create app* → repository `qraza/finance-tickmark`, branch `main`, main file `ui/app.py` → *Deploy*. It installs only `ui/requirements.txt`. Then put the app's URL in the repo's About → Website.
+
 ## Quickstart
 
 ```bash
 python -m venv .venv && source .venv/bin/activate
-make setup     # pip install -e ".[dev,llm]"
+make setup     # pip install -e ".[dev,llm,ui]"
 make all       # generate data → dbt build → validate semantic layer → tests → oracle evals
 ```
 
@@ -187,6 +194,7 @@ cd dbt && DBT_PROFILES_DIR=. mf query --metrics opex,opex_budget_to_date,opex_va
 - [x] BM25 retrieval baseline with citations
 - [x] **Week 2:** LLM metric path end to end (Claude → semantic query → MetricFlow), `ask` CLI, server-side refusals, 21-case golden set
 - [x] **Week 3:** Claude routing, scoped retrieval, Claude-written "why" and document answers with grounding check, citation precision, 32-case golden set
-- [ ] **Week 4:** Streamlit demo, eval history in README, 2-minute video
+- [x] **Week 4:** Streamlit demo (live and replay modes), eval history
+- [ ] Record `demo/answers.json`, deploy the hosted demo, 2-minute video
 
 All data is synthetic. Larkspur Ltd and everyone named in the corpus are fictional.

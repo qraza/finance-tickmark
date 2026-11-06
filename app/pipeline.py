@@ -19,7 +19,7 @@ import threading
 from functools import lru_cache
 
 from .answer import Answer, Citation
-from .format import render
+from .format import render, scope as describe_scope
 from .grounding import ungrounded
 from .format import value
 from .llm import plan, write_answer
@@ -178,11 +178,16 @@ def run_metric(query: SemanticQuery, engine) -> Answer:
         return Answer.refusal("there is no data for that period; actuals run to September 2026")
 
     first = dict(zip(res.columns, res.rows[0]))
+    labels = {c: engine.catalogue.metrics[c].label if c in engine.catalogue.metrics
+              else c.split("__", 1)[-1].replace("_", " ").capitalize() for c in res.columns}
     return Answer(
         text=render(query, res.columns, res.rows, engine.catalogue),
         numbers={c: float(first[c]) for c in metric_cols if first[c] is not None},
         sql=res.sql,
         semantic_query=query.to_dict(),
+        scope=describe_scope(query),
+        table={"columns": list(res.columns), "labels": labels,
+               "rows": [[float(v) if isinstance(v, (int, float)) else v for v in r] for r in res.rows]},
     )
 
 
@@ -191,25 +196,21 @@ def explain(question: str, num: Answer, query: SemanticQuery, *, engine, client=
     ds = drivers(query, engine)
     figures = "\n\n".join(filter(None, [num.text, drivers_text(ds, engine)]))
     hits = why_passages(question, num.semantic_query, ds, index=index)
+    base = dict(numbers=num.numbers, sql=num.sql, semantic_query=num.semantic_query,
+                scope=num.scope, table=num.table, drivers=ds)
     if not hits:
-        return Answer(text=figures, numbers=num.numbers, sql=num.sql, semantic_query=num.semantic_query,
-                      warnings=["no documents matched; showing the figures only"])
+        return Answer(text=figures, warnings=["no documents matched; showing the figures only"], **base)
     written = write_answer(question, figures, hits, client=client)
     if written is not None and not written.answerable:
-        return Answer(
-            text=f"{figures}\n\nThe documents don't explain this: {written.text}",
-            numbers=num.numbers, sql=num.sql, semantic_query=num.semantic_query,
-            warnings=["the documents don't explain this variance"],
-        )
+        unexplained = f"The documents don't explain this: {written.text}"
+        return Answer(text=f"{figures}\n\n{unexplained}", explanation=unexplained,
+                      warnings=["the documents don't explain this variance"], **base)
     raw = list(num.numbers.values()) + [d["value"] for d in ds]
     body, citations, warning = _accept(written, hits, [figures], raw)
     if body is None:
         body, citations = _fallback_text(hits), _top_citations(hits)
-    return Answer(
-        text=f"{figures}\n\n{body}",
-        numbers=num.numbers, sql=num.sql, semantic_query=num.semantic_query,
-        citations=citations, warnings=[w for w in [warning] if w],
-    )
+    return Answer(text=f"{figures}\n\n{body}{_refs(citations)}", explanation=body, citations=citations,
+                  warnings=[w for w in [warning] if w], **base)
 
 
 def answer_document(question: str, search: str | None = None, *, client=None, index=None) -> Answer:
@@ -222,10 +223,17 @@ def answer_document(question: str, search: str | None = None, *, client=None, in
     body, citations, warning = _accept(written, hits, [], [])
     if body is None:
         body, citations = _fallback_text(hits), _top_citations(hits)
-    return Answer(text=body, citations=citations, warnings=[w for w in [warning] if w])
+    return Answer(text=f"{body}{_refs(citations)}", explanation=body, citations=citations,
+                  warnings=[w for w in [warning] if w])
 
 
 def answer(question: str, *, client=None, engine=None, index=None) -> Answer:
+    ans = _answer(question, client=client, engine=engine, index=index)
+    ans.question = question
+    return ans
+
+
+def _answer(question: str, *, client=None, engine=None, index=None) -> Answer:
     engine = engine or default_engine()
     p = plan(question, engine.catalogue, client=client)
     if p.kind == "refuse":
@@ -291,13 +299,15 @@ def _accept(written, hits, figure_texts: list[str], raw_numbers: list[float]):
     bad = ungrounded(written.text, figure_texts + [c.body for c in cited], raw_numbers)
     if bad:
         return None, [], f"the explanation stated figures not in its sources ({', '.join(bad)}); showing the passage"
-    refs = "; ".join(f"{c.source} › {c.section}" for c in cited)
-    return f"{written.text}\n[{refs}]", [Citation(c.source, c.section, c.body) for c in cited], None
+    return written.text, [Citation(c.source, c.section, c.body) for c in cited], None
+
+
+def _refs(citations) -> str:
+    return "\n[" + "; ".join(f"{c.source} › {c.section}" for c in citations) + "]" if citations else ""
 
 
 def _fallback_text(hits) -> str:
-    top = hits[0]
-    return f"Relevant passage:\n{top.body}\n[{top.source} › {top.section}]"
+    return f"Relevant passage:\n{hits[0].body}"
 
 
 def _top_citations(hits, n: int = 3) -> list[Citation]:

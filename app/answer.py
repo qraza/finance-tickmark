@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import asdict, dataclass, field
 
 
 @dataclass
@@ -22,6 +22,21 @@ class Answer:
     refusal_reason: str | None = None
     semantic_query: dict | None = None  # what the LLM asked for, kept for audit and debugging
     warnings: list[str] = field(default_factory=list)  # e.g. an explanation rejected by the grounding check
+    # The parts of `text`, kept separate for the UI:
+    question: str | None = None
+    scope: str | None = None            # "Q3 2026, cost centre name Engineering"
+    table: dict | None = None           # {"columns": [...], "labels": {col: label}, "rows": [[...], ...]}
+    drivers: list[dict] = field(default_factory=list)  # drill-down rows behind a "why" answer
+    explanation: str | None = None      # Claude's written answer (or the fallback passage), without refs
+
+    def to_dict(self) -> dict:
+        return asdict(self)
+
+    @classmethod
+    def from_dict(cls, d: dict) -> "Answer":
+        d = dict(d)
+        d["citations"] = [Citation(**c) for c in d.get("citations", [])]
+        return cls(**{k: v for k, v in d.items() if k in cls.__dataclass_fields__})
 
     @classmethod
     def refusal(cls, reason: str) -> "Answer":

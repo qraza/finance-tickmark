@@ -33,8 +33,14 @@ def main(argv=None) -> int:
     cases = load_cases(args.cases)
     if args.tag:
         cases = [c for c in cases if args.tag in c.tags]
+    thresholds = dict(DEFAULT_THRESHOLDS)
+    for t in args.threshold:
+        k, v = t.split("=")
+        thresholds[k] = float(v)
+
     def progress(done: int, total: int, r) -> None:
-        ok = not r.error and all(v is None or v >= 1 for v in r.scores.values())
+        # ✗ only for metrics with a threshold; precision is reported, not gated
+        ok = not r.error and all(v is None or v >= 1 for k, v in r.scores.items() if k in thresholds)
         print(f"[{done:>{len(str(total))}}/{total}] {'✓' if ok else '✗'} {r.case_id} ({r.latency_s:.1f}s)",
               file=sys.stderr, flush=True)
 
@@ -42,10 +48,6 @@ def main(argv=None) -> int:
                   workers=args.workers, progress=progress)
     summary = summarise(results)
 
-    thresholds = dict(DEFAULT_THRESHOLDS)
-    for t in args.threshold:
-        k, v = t.split("=")
-        thresholds[k] = float(v)
 
     args.out.mkdir(parents=True, exist_ok=True)
     (args.out / "results.json").write_text(json.dumps(

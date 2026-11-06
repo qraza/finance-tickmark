@@ -1,10 +1,10 @@
 export DBT_PROFILES_DIR := $(CURDIR)/dbt
 export FINANCE_TICKMARK_DB_PATH := $(CURDIR)/finance-tickmark.duckdb
 
-.PHONY: setup data build test evals evals-pipeline ask all clean
+.PHONY: setup data build test evals evals-pipeline ask demo demo-cache all clean
 
 setup:
-	pip install -e ".[dev,llm]"
+	pip install -e ".[dev,llm,ui]"
 
 data:            ## generate the synthetic ledger and commentary
 	python data_gen/generate.py
@@ -22,6 +22,12 @@ evals:           ## oracle evals: data + semantic layer + retrieval, no LLM. CI 
 evals-pipeline:  ## full system with the LLM (needs ANTHROPIC_API_KEY in .env)
 	@python -c "import app, os, sys; sys.exit(0 if os.environ.get('ANTHROPIC_API_KEY') else 'ANTHROPIC_API_KEY not set: add it to .env')"
 	python -m evals.run --cases evals/golden/finance.yaml --system evals.finance:pipeline --out evals/results/pipeline --workers 6
+
+demo:            ## the Streamlit demo: live with a key in .env, else replays demo/answers.json
+	streamlit run ui/app.py
+
+demo-cache:      ## record real answers to the demo's example questions (needs the key); commit the file
+	python -m app.demo
 
 ask:             ## make ask Q="What was Q3 opex against budget?"
 	python -m app.ask --sql "$(Q)"
